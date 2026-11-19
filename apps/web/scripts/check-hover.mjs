@@ -1,0 +1,25 @@
+// Checks the hover wave: still after load, running while hovered, paused (frozen) after leaving.
+import { chromium } from 'playwright-core';
+import { existsSync } from 'node:fs';
+const BASE = process.argv[2] ?? 'http://localhost:5174';
+const EDGE = ['C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe', 'C:/Program Files/Microsoft/Edge/Application/msedge.exe'].find(existsSync);
+const b = await chromium.launch(EDGE ? { executablePath: EDGE } : { channel: 'msedge' });
+const p = await b.newPage({ viewport: { width: 1440, height: 900 } });
+await p.goto(BASE);
+const card = p.locator('a.lq', { hasText: 'In progress' });
+await card.waitFor();
+await p.waitForTimeout(2600);
+const state = () => card.locator('.wave').first().evaluate((el) => getComputedStyle(el).animationPlayState);
+const settled = await state();
+await card.hover();
+await p.waitForTimeout(3000);
+const hovered = await state();
+const moving = await card.evaluate((el) => el.classList.contains('moving'));
+await p.mouse.move(5, 5);
+await p.waitForTimeout(300);
+const left = await state();
+const glass = p.locator('.g-col').nth(2);
+await glass.hover();
+const gHover = await glass.locator('.g-wave').evaluate((el) => getComputedStyle(el).animationPlayState);
+console.log(JSON.stringify({ afterLoad: settled, whileHovered3s: hovered, cardMovingClass: moving, afterLeaving: left, funnelGlassHover: gHover }));
+await b.close().catch(() => {});

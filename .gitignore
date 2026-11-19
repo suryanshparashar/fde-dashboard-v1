@@ -1,0 +1,11 @@
+node_modules
+dist
+local-data/*
+!local-data/.gitkeep
+*.tsbuildinfo
+
+.e2e-data
+
+mockups/
+local-data/
+zzz.md
