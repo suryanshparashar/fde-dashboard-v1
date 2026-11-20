@@ -3,9 +3,10 @@
 import { chromium } from 'playwright-core';
 import { existsSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const DIR = path.resolve('mockups/fde-cards');
+// mockups/ lives at the repo root (two levels above apps/web/)
+const DIR = fileURLToPath(new URL('../../../mockups/fde-cards/', import.meta.url));
 const pages = readdirSync(DIR).filter((f) => /^option-\d-.*\.html$/.test(f)).sort();
 const EDGE = ['C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe', 'C:/Program Files/Microsoft/Edge/Application/msedge.exe'].find(existsSync);
 const browser = await chromium.launch(EDGE ? { executablePath: EDGE } : { channel: 'msedge' });

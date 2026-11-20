@@ -1,12 +1,23 @@
 # AI Academy FDE Dashboard
 
-React + TypeScript frontend. There's no backend yet: a small Vite dev-server plugin saves each monthly upload as a CSV snapshot in `local-data/`.
+React + TypeScript frontend. There's no backend yet: a small Vite dev-server plugin saves each monthly upload as a CSV snapshot in `apps/web/local-data/`.
+
+## Repository layout
+
+| Path | What it holds |
+|---|---|
+| `apps/web/` | The web app: source, config, scripts, tests. Run every command below from here. |
+| `apps/web/local-data/` | Your monthly snapshots and remembered choices (git-ignored) |
+| `mockups/` | Design mockups (git-ignored) |
+
+In the rest of this README, paths are relative to `apps/web/` unless they start with `mockups/`.
 
 ## Run
 
 ```bash
+cd apps/web
 npm install
-npm run dev        # http://localhost:5173
+npm run dev        # http://localhost:9009 (also reachable from other machines on the network)
 ```
 
 Upload the monthly sheet (.xlsx, .xls, .xlsb, .ods, .csv, .tsv) with the **Upload** button.
@@ -68,10 +79,12 @@ The uploader's decisions are saved in `local-data/mappings.json` and applied aut
 
 - An **enrollment** is one employee on one HyperScaler. **Employees** are counted once each.
 - **Levels:**
-  - N = the highest level in the file.
+  - Every HyperScaler has a **fixed 4 levels**, set in `src/lib/levelConfig.ts`. To change a count, edit `DEFAULT_LEVELS` (all HyperScalers) or `LEVELS_BY_HYPERSCALER`, e.g. `{ Azure: 3 }`. The number of levels in the file doesn't change it.
   - A level with no row counts as **Not started**, so every level has the same total.
+  - A row above its HyperScaler's levels (e.g. L5 when it has 4) is **not counted**. It's flagged on the upload screen and in Data checks.
+  - If a HyperScaler is given fewer levels, the Overall charts count a level only for HyperScalers that have it.
 - **Enrollment status:**
-  - Completed = the top level (LN) is completed.
+  - Completed = the HyperScaler's top level (L4 now) is completed.
   - In progress = any level is started.
   - Otherwise Not started.
 - **Highest level** = the highest level completed.
@@ -115,7 +128,8 @@ Navigation rule: a row with **›** opens a view, and the whole row is clickable
 | `npm test` | Unit and pipeline tests (Vitest) |
 | `npm run typecheck` / `npm run build` | TypeScript check / production build |
 | `npm run sample` | Writes `local-data/test/fde-sample-nov-2026.xlsx`: 446 rows in the exact format, including every edge case (see the header of `scripts/make-fde-sample.mjs`) |
-| `node scripts/e2e.mjs <dir>` | Browser end-to-end test using the installed Edge. Run it against a dev server started with `LOCAL_DATA_DIR=.e2e-data` on port 5174, so real data isn't touched (see the header of the script). |
+| `node scripts/e2e.mjs <dir>` | Browser end-to-end test using the installed Edge. Run it against a dev server started with `LOCAL_DATA_DIR=.e2e-data` and `--port 5174`, so real data isn't touched (see the header of the script). |
+| `node scripts/shoot-cards.mjs` | Re-renders the number-card mockups in `mockups/fde-cards/` |
 
 ## Code map
 
@@ -127,5 +141,10 @@ Navigation rule: a row with **›** opens a view, and the whole row is clickable
   - `aggregate.ts`: enrollments, per-level status, groups, filters and data checks.
   - `levels.ts`: level colours generated for any number of levels.
   - `csv.ts`: the snapshot format.
-- `src/components/fde.tsx`: the design-system components (hero, status bars, funnel, ranked tables, breadcrumb, stepper, compare chips, data checks).
-- `mockups/fde-redesign/`: the approved design.
+  - `brand.ts`: the startup's name, logo file and copyright text (placeholders for now; the logo file is `public/brand/logo.svg`).
+- `src/components/`:
+  - `Header.tsx`, `Footer.tsx`: the page header (logo · title · navigation · Month · Upload) and footer (copyright · data month · version).
+  - `liquid.tsx`: liquid status and insight cards, and HyperScaler cards.
+  - `fluid.tsx`: level funnel glasses, status per level, highest level, breakdown, compact stat cards.
+  - `fde.tsx`: shared pieces (status bar, breadcrumb, stepper, tabs, data checks).
+- `mockups/`: the approved designs (`fde-cards/` for the liquid cards, `fde-header-footer/` for the header and footer).

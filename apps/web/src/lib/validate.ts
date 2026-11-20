@@ -7,6 +7,7 @@ import { hsKey, knownHyperscaler } from './hyperscalers';
 import { ruleLevel, ruleStatus, valueKey } from './rules';
 import type { Mappings } from './mappings';
 import { todayIso } from './format';
+import { levelsFor } from './levelConfig';
 
 /** Text cell → trimmed single-spaced string; integer-like numbers lose the ".0" (1023.0 → "1023"). */
 export function cellText(v: unknown): string {
@@ -119,6 +120,7 @@ export function validateRows(
       return void warn('Skipped (your choice for this value)', status === 'skip' ? statusText : levelText);
     }
     if (level === 0) warn('Certification Level is empty: counted as an enrollment but not in any level');
+    else if (level > levelsFor(hyperscaler)) warn(`L${level} is above ${hyperscaler}'s ${levelsFor(hyperscaler)} levels: it won't be counted`, levelText);
 
     const rawEta = get(r, 'eta');
     const etaText = cellText(rawEta);

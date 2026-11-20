@@ -1,15 +1,16 @@
 import type { DataRow, St } from '../types';
 import { isKnownHyperscaler, sortHyperscalers } from './hyperscalers';
+import { LEVEL_CONFIG, levelsFor, type LevelConfig } from './levelConfig';
 
 /**
  * Aggregation of one month's rows.
  *
- * Enrollment = one employee × one HyperScaler. Its status per level comes from that level's row;
- * a level with no row counts as Not started, so every level has the same total.
- * N = the highest level in the file.
+ * Enrollment = one employee × one HyperScaler. Each HyperScaler has a fixed number of levels
+ * (src/lib/levelConfig.ts: 4 for all of them now). Its status per level comes from that level's row;
+ * a level with no row counts as Not started. A row above the HyperScaler's levels is flagged, not counted.
  *
- * Enrollment status: Completed = top level (LN) completed; In progress = any level In progress or
- * Completed but not LN; Not started = nothing started.
+ * Enrollment status: Completed = its HyperScaler's top level completed; In progress = any level
+ * In progress or Completed but not the top one; Not started = nothing started.
  */
 
 export interface Counts {
@@ -26,7 +27,7 @@ export interface Enrollment {
   reportingOrg: string;
   band: string;
   hyperscaler: string;
-  /** Status per level, index 0 = L1. Length N. */
+  /** Status per level, index 0 = L1. Length = levels of its HyperScaler (src/lib/levelConfig.ts). */
   levels: St[];
   /** ETA per level ('' when none). */
   etas: string[];
@@ -43,6 +44,8 @@ export interface Enrollment {
   skipped: boolean;
   /** Rows of this enrollment with an empty level cell. */
   emptyLevelRows: number;
+  /** Rows above its HyperScaler's level count (e.g. L5 when it has 4): not counted. */
+  overRows: number;
 }
 
 export interface Summary {
@@ -52,7 +55,7 @@ export interface Summary {
   employees: number;
   s: Counts;
   started: number;
-  /** Per level, index 0 = L1. Each level sums to `total`. */
+  /** Per level, index 0 = L1. A level counts the enrollments whose HyperScaler has that level (all of them while every HyperScaler has the same count). */
   levels: Counts[];
   highest: { none: number; byLevel: number[] };
   /** Enrollments that completed at least one level. */
@@ -81,6 +84,9 @@ export interface Quality {
   /** Levels whose completed count is higher than the level below (L1 ≥ L2 ≥ … expected). */
   increasing: number[];
   emptyLevelRows: number;
+  /** Rows above their HyperScaler's level count (not counted) and the enrollments they belong to. */
+  overRows: number;
+  overEnrollments: number;
   profileConflicts: ProfileConflict[];
   noOrg: number;
   noBand: number;
@@ -90,6 +96,7 @@ export interface Quality {
 }
 
 export interface Dataset {
+  /** Most levels any HyperScaler with data has (from src/lib/levelConfig.ts); 0 when there is no data. */
   N: number;
   rowCount: number;
   enrollments: Enrollment[];
@@ -101,8 +108,7 @@ export interface Dataset {
 const RANK: Record<St, number> = { ns: 0, wip: 1, done: 2 };
 export const empKey = (empId: string) => empId.trim().toUpperCase();
 
-export function buildDataset(rows: DataRow[]): Dataset {
-  const N = rows.reduce((m, r) => Math.max(m, r.level), 0);
+export function buildDataset(rows: DataRow[], levelCfg: LevelConfig = LEVEL_CONFIG): Dataset {
 
   // Profile per employee: first non-empty value; differing values are flagged.
   const profiles = new Map<string, { empId: string; name: string; email: string; reportingOrg: string; band: string; seen: Record<string, Set<string>> }>();
@@ -129,6 +135,7 @@ export function buildDataset(rows: DataRow[]): Dataset {
     let e = byKey.get(key);
     if (!e) {
       const p = profiles.get(ek)!;
+      const n = levelsFor(r.hyperscaler, levelCfg);
       e = {
         key,
         empId: p.empId,
@@ -137,8 +144,8 @@ export function buildDataset(rows: DataRow[]): Dataset {
         reportingOrg: p.reportingOrg,
         band: p.band,
         hyperscaler: r.hyperscaler,
-        levels: Array<St>(N).fill('ns'),
-        etas: Array<string>(N).fill(''),
+        levels: Array<St>(n).fill('ns'),
+        etas: Array<string>(n).fill(''),
         status: 'ns',
         highest: 0,
         latestEta: '',
@@ -146,13 +153,18 @@ export function buildDataset(rows: DataRow[]): Dataset {
         dupRows: 0,
         skipped: false,
         emptyLevelRows: 0,
-        _rows: Array<number>(N).fill(0),
+        overRows: 0,
+        _rows: Array<number>(n).fill(0),
       };
       byKey.set(key, e);
     }
     if (r.eta && r.eta > e.latestEta) e.latestEta = r.eta;
     if (!r.level) {
       e.emptyLevelRows++;
+      continue;
+    }
+    if (r.level > e.levels.length) {
+      e.overRows++; // above this HyperScaler's levels: flagged, not counted
       continue;
     }
     const i = r.level - 1;
@@ -174,10 +186,12 @@ export function buildDataset(rows: DataRow[]): Dataset {
     const lastDone = e.levels.lastIndexOf('done');
     e.highest = lastDone + 1;
     e.skipped = lastDone > 0 && e.levels.slice(0, lastDone).some((s) => s !== 'done');
-    e.status = N > 0 && e.levels[N - 1] === 'done' ? 'done' : e.levels.some((s) => s !== 'ns') ? 'wip' : 'ns';
+    const top = e.levels.length;
+    e.status = top > 0 && e.levels[top - 1] === 'done' ? 'done' : e.levels.some((s) => s !== 'ns') ? 'wip' : 'ns';
     enrollments.push(e);
   }
 
+  const N = enrollments.reduce((m, e) => Math.max(m, e.levels.length), 0);
   const summary = summarize(enrollments, N);
   const conflicts: ProfileConflict[] = [];
   for (const p of profiles.values())
@@ -205,6 +219,8 @@ export function subsetQuality(list: Enrollment[], sum: Summary, allConflicts: Pr
     skipped: list.filter((e) => e.skipped).length,
     increasing: increasingLevels(sum),
     emptyLevelRows: list.reduce((n, e) => n + e.emptyLevelRows, 0),
+    overRows: list.reduce((n, e) => n + e.overRows, 0),
+    overEnrollments: list.filter((e) => e.overRows > 0).length,
     profileConflicts: allConflicts.filter((c) => emps.has(empKey(c.empId))),
     noOrg: people.filter((p) => !p.reportingOrg).length,
     noBand: people.filter((p) => !p.band).length,
@@ -222,7 +238,7 @@ export function summarize(list: Enrollment[], N: number): Summary {
   for (const e of list) {
     s[e.status]++;
     emps.add(empKey(e.empId));
-    e.levels.forEach((st, i) => levels[i][st]++);
+    e.levels.forEach((st, i) => levels[i] && levels[i][st]++); // a level counts only enrollments whose HyperScaler has it
     if (e.highest) byLevel[e.highest - 1]++;
     else none++;
   }
@@ -275,7 +291,7 @@ export interface PeopleFilter {
   ls?: St;
   /** Highest completed level (0 = none). */
   hi?: number;
-  flag?: 'skip' | 'dup' | 'nolevel';
+  flag?: 'skip' | 'dup' | 'nolevel' | 'over';
   q?: string;
 }
 
@@ -289,7 +305,7 @@ export function applyFilter(list: Enrollment[], f: PeopleFilter): Enrollment[] {
       (f.st === undefined || e.status === f.st) &&
       (f.lv === undefined || f.ls === undefined || e.levels[f.lv - 1] === f.ls) &&
       (f.hi === undefined || e.highest === f.hi) &&
-      (f.flag === undefined || (f.flag === 'skip' ? e.skipped : f.flag === 'dup' ? e.dupLevels.length > 0 : e.emptyLevelRows > 0)) &&
+      (f.flag === undefined || (f.flag === 'skip' ? e.skipped : f.flag === 'dup' ? e.dupLevels.length > 0 : f.flag === 'over' ? e.overRows > 0 : e.emptyLevelRows > 0)) &&
       (!q || `${e.empId} ${e.name} ${e.email} ${e.reportingOrg} ${e.band} ${e.hyperscaler}`.toLowerCase().includes(q)),
   );
 }

@@ -82,6 +82,21 @@ describe('sample monthly file → dashboard data', () => {
     expect(buildDataset(back).summary).toEqual(d.summary);
   });
 
+  it('warns at upload about a level above the HyperScaler’s 4 levels (row kept, not counted later)', () => {
+    const sheet = {
+      name: 'S',
+      headers: ['Emp ID', 'Name', 'Reporting Orgn', 'Band', 'HyperScaler', 'ETA (Date)', 'Certificate done/WIP', 'Certification Levels', 'Email ID'],
+      rows: [['E1', 'A', 'Org', 'B1', 'AWS', '', 'Completed', 'L5', 'a@example.com']],
+      display: [['E1', 'A', 'Org', 'B1', 'AWS', '', 'Completed', 'L5', 'a@example.com']],
+      rowNumbers: [2],
+      headerRowNumber: 1,
+    };
+    const res = validateRows(sheet, autoMapColumns(sheet.headers), emptyMappings(), false, TODAY);
+    expect(res.rows).toHaveLength(1);
+    expect(res.issues.map((i) => i.reason)).toContain("L5 is above AWS's 4 levels: it won't be counted");
+    expect(buildDataset(res.rows).quality.overRows).toBe(1);
+  });
+
   it('refuses snapshots in the earlier format', () => {
     expect(() => csvToSnapshot('Emp ID,Name,Reporting Org,Band,HyperScaler,ETA (Date),Certificate done/WIP,Certification levels,Email ID,Added In,Updated In\n')).toThrow(OldFormatError);
   });

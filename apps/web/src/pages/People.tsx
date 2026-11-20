@@ -15,7 +15,7 @@ import { Icon } from '../components/icons';
 import { summarize } from '../lib/aggregate';
 
 const isSt = (v: string | null): v is St => v === 'done' || v === 'wip' || v === 'ns';
-const FLAGS = { skip: 'Completed a level above an uncompleted one', dup: 'Has duplicate rows', nolevel: 'Has rows with an empty level' } as const;
+const FLAGS = { skip: 'Completed a level above an uncompleted one', dup: 'Has duplicate rows', nolevel: 'Has rows with an empty level', over: "Has rows above its HyperScaler's levels" } as const;
 
 /** Read the employee-list filters from the URL. */
 function readFilter(p: URLSearchParams): PeopleFilter {
@@ -33,7 +33,7 @@ function readFilter(p: URLSearchParams): PeopleFilter {
   }
   if (p.has('hi') && Number.isInteger(Number(p.get('hi')))) f.hi = Number(p.get('hi'));
   const flag = p.get('flag');
-  if (flag === 'skip' || flag === 'dup' || flag === 'nolevel') f.flag = flag;
+  if (flag === 'skip' || flag === 'dup' || flag === 'nolevel' || flag === 'over') f.flag = flag;
   return f;
 }
 

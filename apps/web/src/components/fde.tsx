@@ -143,6 +143,13 @@ export function DataQuality({ q, sum, base, scope }: { q: Quality; sum: Summary;
         <SnapLink to={peopleUrl({ ...base, flag: 'dup' })}>{n(q.duplicateEnrollments, 'enrollment')}</SnapLink>). The furthest status was kept.
       </>,
     );
+  if (q.overRows)
+    items.push(
+      <>
+        <b>{n(q.overRows, 'row')}</b> {q.overRows === 1 ? 'is' : 'are'} above its HyperScaler's levels (e.g. L5 when it has 4) and {q.overRows === 1 ? 'is' : 'are'} not counted (
+        <SnapLink to={peopleUrl({ ...base, flag: 'over' })}>{n(q.overEnrollments, 'enrollment')}</SnapLink>). Level counts are set in levelConfig.ts.
+      </>,
+    );
   if (q.emptyLevelRows)
     items.push(
       <>

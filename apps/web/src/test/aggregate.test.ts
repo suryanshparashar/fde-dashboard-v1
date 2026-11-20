@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { DataRow, St } from '../types';
 import { applyFilter, buildDataset, groupBy, increasingLevels, summarize } from '../lib/aggregate';
+import { DEFAULT_LEVELS, levelsFor, type LevelConfig } from '../lib/levelConfig';
 
 const row = (empId: string, hyperscaler: string, level: number, status: St, extra: Partial<DataRow> = {}): DataRow => ({
   empId,
@@ -33,8 +34,55 @@ const ROWS: DataRow[] = [
   row('G', 'AWS', 0, 'done'), // empty level → enrollment only
 ];
 
+// This small example is written for 3 levels, so it runs with a 3-level config.
+const THREE: LevelConfig = { default: 3, byHyperscaler: {} };
+
+describe('level config (src/lib/levelConfig.ts)', () => {
+  it('every HyperScaler has 4 levels by default, regardless of the levels in the file', () => {
+    expect(DEFAULT_LEVELS).toBe(4);
+    expect(levelsFor('AWS')).toBe(4);
+    expect(levelsFor('Oracle Cloud')).toBe(4);
+    const d = buildDataset([row('X', 'AWS', 1, 'done'), row('Y', 'Azure', 2, 'wip')]);
+    expect(d.N).toBe(4);
+    expect(d.enrollments.every((e) => e.levels.length === 4)).toBe(true);
+    for (const l of d.summary.levels) expect(l.done + l.wip + l.ns).toBe(2);
+  });
+
+  it('Completed means the HyperScaler’s own top level (L4) is done', () => {
+    const three = [1, 2, 3].map((lv) => row('X', 'AWS', lv, 'done'));
+    expect(buildDataset(three).enrollments[0].status).toBe('wip');
+    expect(buildDataset([...three, row('X', 'AWS', 4, 'done')]).enrollments[0].status).toBe('done');
+  });
+
+  it('a per-HyperScaler override changes only that HyperScaler', () => {
+    const cfg: LevelConfig = { default: 4, byHyperscaler: { Azure: 3 } };
+    const rows = [1, 2, 3].flatMap((lv) => [row('X', 'Azure', lv, 'done'), row('Y', 'AWS', lv, 'done')]);
+    const d = buildDataset(rows, cfg);
+    const az = d.enrollments.find((e) => e.hyperscaler === 'Azure')!;
+    const aws = d.enrollments.find((e) => e.hyperscaler === 'AWS')!;
+    expect(az.levels).toHaveLength(3);
+    expect(az.status).toBe('done'); // L3 is Azure's top level
+    expect(aws.levels).toHaveLength(4);
+    expect(aws.status).toBe('wip');
+    expect(d.N).toBe(4);
+    // L4 counts only enrollments whose HyperScaler has an L4 (AWS), L1–L3 count both
+    expect(d.summary.levels.map((l) => l.done + l.wip + l.ns)).toEqual([2, 2, 2, 1]);
+  });
+
+  it('rows above the HyperScaler’s levels are flagged and not counted', () => {
+    const d = buildDataset([row('X', 'AWS', 1, 'done'), row('X', 'AWS', 5, 'done'), row('X', 'AWS', 6, 'wip')]);
+    const e = d.enrollments[0];
+    expect(e.levels).toEqual(['done', 'ns', 'ns', 'ns']);
+    expect(e.highest).toBe(1);
+    expect(e.overRows).toBe(2);
+    expect(d.quality.overRows).toBe(2);
+    expect(d.quality.overEnrollments).toBe(1);
+    expect(applyFilter(d.enrollments, { flag: 'over' }).map((x) => x.empId)).toEqual(['X']);
+  });
+});
+
 describe('buildDataset', () => {
-  const d = buildDataset(ROWS);
+  const d = buildDataset(ROWS, THREE);
 
   it('counts unique employees and enrollments separately', () => {
     expect(d.N).toBe(3);

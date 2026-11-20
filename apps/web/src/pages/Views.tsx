@@ -6,6 +6,7 @@ import { applyFilter, groupBy, subsetQuality, summarize } from '../lib/aggregate
 import { fmtNum, dataMonth, snapshotLabel } from '../lib/format';
 import { peopleUrl } from '../lib/links';
 import { isBaseHyperscaler, isKnownHyperscaler, shownHyperscalers } from '../lib/hyperscalers';
+import { levelsFor } from '../lib/levelConfig';
 import { Breadcrumb, HsTabs, NewTag, Stepper } from '../components/fde';
 import { BreakdownCard, FunnelGlasses, HighestCard, LevelStatusCard } from '../components/fluid';
 import { HsCards, HsLogo, InsightCards, StatusCards } from '../components/liquid';
@@ -150,7 +151,7 @@ export function HyperScalerView() {
         const quality = subsetQuality(list, sum, d.quality.profileConflicts);
         return (
           <>
-            {head(`HyperScaler · ${fmtNum(sum.total)} employees · ${d.N} levels`)}
+            {head(`HyperScaler · ${fmtNum(sum.total)} employees · ${levelsFor(name)} levels`)}
             <div className="page stack">
               <div className="sec" style={{ marginTop: 0 }}>
                 Status

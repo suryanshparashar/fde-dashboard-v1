@@ -204,7 +204,7 @@ export function StatusCards({ sum, base, parent }: { sum: Summary; base: PeopleF
 /* ---------------- key insights: 4 liquid cards + data checks ---------------- */
 
 export function countChecks(q: Quality, withHs: boolean): number {
-  return [withHs && q.addedHyperscalers.length, q.increasing.length, q.skipped, q.duplicateRows, q.emptyLevelRows, q.profileConflicts.length, q.noOrg, q.noBand, q.noEmail].filter(Boolean).length;
+  return [withHs && q.addedHyperscalers.length, q.increasing.length, q.skipped, q.duplicateRows, q.emptyLevelRows, q.overRows, q.profileConflicts.length, q.noOrg, q.noBand, q.noEmail].filter(Boolean).length;
 }
 
 export function InsightCards({ sum, q, base, parent }: { sum: Summary; q: Quality; base: PeopleFilter; parent?: Summary }) {
