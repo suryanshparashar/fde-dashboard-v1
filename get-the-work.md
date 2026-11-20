@@ -6,18 +6,18 @@ You are building a complete web application from this specification. Build **exa
 
 ## 1. What the app is
 
-**AI Academy FDE Dashboard** is a single-page React + TypeScript dashboard that tracks employees' certification progress across "HyperScalers" (cloud/AI vendors: Anthropic, Azure, AWS, Google, …) and certification levels (L1–L4).
+**AI Academy FDE Dashboard** is a single-page **Angular 17** + TypeScript dashboard (standalone components, signals, the new `@if`/`@for` control flow). It lives in `apps/web-ng/`, and its storage API is a separate, dependency-free Node server in `apps/api/`. The dashboard that tracks employees' certification progress across "HyperScalers" (cloud/AI vendors: Anthropic, Azure, AWS, Google, …) and certification levels (L1–L4).
 
 - Every month an admin uploads one spreadsheet (Excel/CSV). It has one row per **employee × HyperScaler × level**.
 - The app parses, normalizes and validates the sheet. Values the built-in rules don't cover are sent to the uploader to decide, and those choices are remembered.
-- Each upload is saved as an immutable CSV **snapshot** in `apps/web/local-data/`. One snapshot is one month of data, and months are never merged.
+- Each upload is saved as an immutable CSV **snapshot** in `apps/api/local-data/`. One snapshot is one month of data, and months are never merged.
 - The dashboard shows:
   - an Overall view;
   - one view per HyperScaler;
   - an Employees list with filters, search and CSV export;
   - the upload history and per-upload summaries;
   - a read-only "past month" mode.
-- There is **no real backend**. A Vite dev-server plugin stores files on disk and exposes a small REST API (`/api/snapshots`, `/api/mappings`) that a future backend would implement.
+- There is no database. A tiny Node HTTP server (`apps/api/server.mjs`, port 9010) stores files on disk and exposes a small REST API (`/api/snapshots`, `/api/mappings`). The Angular dev server (port 4200) proxies `/api` to it.
 - The visual language is "liquid / fluid":
   - Cards fill like glasses once on load, then stay still.
   - A gentle wave slosh plays only while hovered.
@@ -38,59 +38,90 @@ Design principles:
 
 ## 2. Tech stack (exact)
 
-`apps/web/package.json`:
+`apps/web-ng/package.json`:
 
 ```json
 {
-  "name": "certification-dashboard",
-  "private": true,
+  "name": "web-ng",
   "version": "0.1.0",
-  "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
-    "preview": "vite preview",
-    "typecheck": "tsc -b --noEmit",
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "ng": "ng",
+    "start": "concurrently -k -n api,web -c cyan,blue \"node ../api/server.mjs\" \"ng serve\"",
+    "build": "ng build",
+    "watch": "ng build --watch --configuration development",
+    "test": "ng test",
+    "start:web": "ng serve",
+    "start:api": "node ../api/server.mjs",
+    "test:lib": "vitest run",
+    "typecheck": "tsc -p tsconfig.app.json --noEmit",
     "sample": "node scripts/make-fde-sample.mjs"
   },
+  "private": true,
   "dependencies": {
+    "@angular/animations": "^17.3.0",
+    "@angular/common": "^17.3.0",
+    "@angular/compiler": "^17.3.0",
+    "@angular/core": "^17.3.0",
+    "@angular/forms": "^17.3.0",
+    "@angular/platform-browser": "^17.3.0",
+    "@angular/platform-browser-dynamic": "^17.3.0",
+    "@angular/router": "^17.3.0",
     "@fontsource-variable/manrope": "^5.1.1",
-    "@tanstack/react-query": "^5.62.0",
-    "@tanstack/react-table": "^8.20.5",
-    "echarts": "^5.5.1",
-    "echarts-for-react": "^3.0.2",
     "papaparse": "^5.4.1",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "react-router-dom": "^6.28.0",
+    "rxjs": "~7.8.0",
+    "tslib": "^2.3.0",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
-    "zod": "^3.23.8"
+    "zod": "^3.23.8",
+    "zone.js": "~0.14.3"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "^4.0.17",
-    "@types/node": "^22.10.1",
+    "@angular-devkit/build-angular": "^17.3.12",
+    "@angular/cli": "^17.3.12",
+    "@angular/compiler-cli": "^17.3.0",
+    "@types/jasmine": "~5.1.0",
+    "@types/node": "^20.17.10",
     "@types/papaparse": "^5.3.15",
-    "@types/react": "^18.3.12",
-    "@types/react-dom": "^18.3.1",
-    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "concurrently": "^9.1.0",
+    "jasmine-core": "~5.1.0",
+    "karma": "~6.4.0",
+    "karma-chrome-launcher": "~3.2.0",
+    "karma-coverage": "~2.2.0",
+    "karma-jasmine": "~5.1.0",
+    "karma-jasmine-html-reporter": "~2.1.0",
     "playwright-core": "^1.49.1",
-    "tailwindcss": "^4.0.17",
-    "typescript": "^5.6.3",
-    "vite": "^6.0.3",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.17",
+    "typescript": "~5.4.2",
     "vitest": "^2.1.8"
   }
 }
 ```
 
-(`@tanstack/react-table`, `echarts` and `echarts-for-react` are installed but not used by the current UI; keep them in the manifest. Charts are hand-built with HTML/CSS/SVG.)
+`apps/api/package.json` (the API server has **no dependencies**):
 
-- React 18 with `StrictMode`, React Router v6 (`BrowserRouter`), TanStack Query v5.
-- Tailwind CSS v4 via `@tailwindcss/vite`, plus a large hand-written stylesheet (`src/index.css`, Appendix A). Tailwind utility classes are used only for small layout helpers inside components.
-- SheetJS (`xlsx` 0.20.3 from the SheetJS CDN tarball) reads spreadsheets, PapaParse reads and writes CSV, and Zod validates emails.
-- Font: Manrope Variable, self-hosted via `@fontsource-variable/manrope` (imported in `main.tsx`).
-- Tests: Vitest. Browser scripts: `playwright-core` driving the locally installed Microsoft Edge.
+```json
+{
+  "name": "fde-api",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Local API for the AI Academy FDE Dashboard: stores monthly snapshots in ./local-data",
+  "scripts": { "start": "node server.mjs" }
+}
+```
+
+- **Angular 17.3**:
+  - every component is `standalone: true`; there are no NgModules;
+  - templates use the built-in control flow (`@if`, `@else if`, `@for … track`, `@switch`);
+  - state is held in **signals** (`signal`, `computed`, `effect`, `toSignal`);
+  - bootstrapping is `bootstrapApplication` with `provideRouter(routes, withComponentInputBinding())`;
+  - Zone.js is used, but no `@angular/forms` APIs; inputs are bound with `[value]` and `(input)`/`(change)`;
+  - no component has its own `styles`; everything is in the global stylesheet.
+- **Tailwind CSS v3** (PostCSS through the Angular builder), plus the large hand-written global stylesheet `src/styles.css` (Appendix A). Tailwind utilities are used only for small layout helpers in templates. `tailwind.config.js` adds the same colour names as the CSS tokens.
+- SheetJS (`xlsx` 0.20.3 from the SheetJS CDN tarball) reads spreadsheets, PapaParse reads and writes CSV (allowed as a CommonJS dependency in `angular.json`), and Zod validates emails.
+- Font: Manrope Variable from `@fontsource-variable/manrope`, added to the `styles` array in `angular.json`.
+- Tests: the framework-free logic in `src/app/lib` is tested with **Vitest** (`npm run test:lib`). The Karma/Jasmine `ng test` set-up is left as the CLI generated it, with no spec files. Browser scripts use `playwright-core` driving the locally installed Microsoft Edge.
 
 ---
 
@@ -99,34 +130,37 @@ Design principles:
 ```
 .gitignore
 README.md
-apps/web/
-  index.html
-  package.json
-  tsconfig.json  tsconfig.app.json  tsconfig.node.json
-  vite.config.ts
-  vite-plugin-local-data.ts
-  public/
-    favicon.svg
-    brand/logo.svg
-  scripts/
-    make-fde-sample.mjs   e2e.mjs   check-pages.mjs   check-hover.mjs
-    check-status-filter.mjs   settled-shots.mjs   shot.mjs   shoot-cards.mjs
-  src/
-    main.tsx  App.tsx  index.css  types.ts  globals.d.ts
-    hooks/useData.ts
-    lib/  aggregate.ts api.ts brand.ts columns.ts csv.ts format.ts hyperscalers.ts
-          levelConfig.ts levels.ts links.ts logos.ts mappings.ts parse.ts rules.ts
-          runImport.ts snapshotName.ts validate.ts
-    components/  Header.tsx Footer.tsx PastViewBanner.tsx SnapshotPicker.tsx SnapLink.tsx
-                 HsLogo.tsx icons.tsx PeopleTable.tsx fde.tsx liquid.tsx fluid.tsx
-    pages/  Views.tsx People.tsx Upload.tsx Uploads.tsx ImportSummary.tsx
-    test/  aggregate.test.ts pipeline.test.ts rules.test.ts snapshotName.test.ts
-           fixtures/fde-sample.xlsx   (generated by scripts/make-fde-sample.mjs)
-  local-data/   (git-ignored; created at runtime)
-mockups/        (git-ignored design mockups; not part of the app)
+apps/
+  api/
+    package.json
+    server.mjs              (Appendix F)
+    local-data/             (snapshots + mappings.json, created at runtime, git-ignored)
+  web-ng/
+    .editorconfig  .gitignore  README.md (Angular CLI default)
+    .vscode/  extensions.json  launch.json  tasks.json   (Angular CLI defaults)
+    angular.json  proxy.conf.json  tailwind.config.js  vitest.config.mjs
+    package.json  tsconfig.json  tsconfig.app.json  tsconfig.spec.json
+    scripts/
+      make-fde-sample.mjs  make-fde-sample-oct.mjs  e2e.mjs  check-pages.mjs  settled-shots.mjs  shot.mjs
+    src/
+      index.html  main.ts  styles.css  favicon.svg
+      assets/  .gitkeep  brand/logo.svg
+      app/
+        app.component.ts  app.config.ts  app.routes.ts  types.ts
+        core/  data.service.ts  fill.ts  snap-link.directive.ts
+        lib/   aggregate.ts api.ts brand.ts columns.ts csv.ts format.ts hyperscalers.ts
+               levelConfig.ts levels.ts links.ts logos.ts mappings.ts parse.ts rules.ts
+               runImport.ts snapshotName.ts validate.ts
+        ui/    basics.ts  liquid.ts  fluid.ts  shell.ts
+        pages/ views.ts  people.ts  upload.ts  uploads.ts
+        test/  aggregate.test.ts pipeline.test.ts rules.test.ts snapshotName.test.ts
+               fixtures/fde-sample.xlsx   (generated by scripts/make-fde-sample.mjs)
+mockups/   (git-ignored design mockups; not part of the app)
 ```
 
-`.gitignore` (repo root):
+`src/app/lib/*` and `src/app/types.ts` are **plain TypeScript with no Angular imports**, so Vitest can test them in Node. Everything in §6–§9 lives there.
+
+Repo-root `.gitignore`:
 
 ```
 node_modules
@@ -142,143 +176,213 @@ local-data/
 zzz.md
 ```
 
+`apps/web-ng/.gitignore` and `.editorconfig` are the Angular CLI 17 defaults. `.editorconfig` uses 2-space indents, UTF-8, a final newline, and `quote_type = single` for `*.ts`.
+
 ---
 
 ## 4. Config files (verbatim)
 
-`apps/web/index.html`:
+`apps/web-ng/angular.json`:
+
+```json
+{
+  "$schema": "./node_modules/@angular/cli/lib/config/schema.json",
+  "version": 1,
+  "cli": { "packageManager": "npm", "analytics": false },
+  "newProjectRoot": "projects",
+  "projects": {
+    "web-ng": {
+      "projectType": "application",
+      "schematics": {},
+      "root": "",
+      "sourceRoot": "src",
+      "prefix": "app",
+      "architect": {
+        "build": {
+          "builder": "@angular-devkit/build-angular:application",
+          "options": {
+            "outputPath": "dist/web-ng",
+            "index": "src/index.html",
+            "browser": "src/main.ts",
+            "polyfills": ["zone.js"],
+            "tsConfig": "tsconfig.app.json",
+            "assets": ["src/favicon.svg", "src/assets"],
+            "styles": ["node_modules/@fontsource-variable/manrope/index.css", "src/styles.css"],
+            "scripts": [],
+            "allowedCommonJsDependencies": ["papaparse"]
+          },
+          "configurations": {
+            "production": {
+              "budgets": [
+                { "type": "initial", "maximumWarning": "800kb", "maximumError": "1.5mb" },
+                { "type": "anyComponentStyle", "maximumWarning": "2kb", "maximumError": "4kb" }
+              ],
+              "outputHashing": "all"
+            },
+            "development": { "optimization": false, "extractLicenses": false, "sourceMap": true }
+          },
+          "defaultConfiguration": "production"
+        },
+        "serve": {
+          "builder": "@angular-devkit/build-angular:dev-server",
+          "configurations": {
+            "production": { "buildTarget": "web-ng:build:production" },
+            "development": { "buildTarget": "web-ng:build:development" }
+          },
+          "defaultConfiguration": "development",
+          "options": { "proxyConfig": "proxy.conf.json", "port": 4200 }
+        },
+        "extract-i18n": {
+          "builder": "@angular-devkit/build-angular:extract-i18n",
+          "options": { "buildTarget": "web-ng:build" }
+        },
+        "test": {
+          "builder": "@angular-devkit/build-angular:karma",
+          "options": {
+            "polyfills": ["zone.js", "zone.js/testing"],
+            "tsConfig": "tsconfig.spec.json",
+            "assets": ["src/favicon.svg", "src/assets"],
+            "styles": ["node_modules/@fontsource-variable/manrope/index.css", "src/styles.css"],
+            "scripts": []
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+`apps/web-ng/proxy.conf.json`:
+
+```json
+{
+  "/api": { "target": "http://localhost:9010", "secure": false, "changeOrigin": true }
+}
+```
+
+`apps/web-ng/tailwind.config.js`:
+
+```js
+/** @type {import('tailwindcss').Config} — same colour names as the React app (bg-brand, text-muted, border-line, bg-wash…). */
+module.exports = {
+  content: ['./src/**/*.{html,ts}'],
+  theme: {
+    extend: {
+      fontFamily: { sans: ["'Manrope Variable'", "'Segoe UI'", 'system-ui', 'sans-serif'] },
+      colors: { brand: '#1d4ed8', ink: '#0f1b3d', muted: '#6b7690', line: '#e3e8f2', wash: '#eef2ff' },
+    },
+  },
+  plugins: [],
+};
+```
+
+`apps/web-ng/vitest.config.mjs`:
+
+```js
+// Unit and pipeline tests for the framework-free logic in src/app/lib (run with `npm run test:lib`).
+import { defineConfig } from 'vitest/config';
+export default defineConfig({ test: { include: ['src/app/test/**/*.test.ts'], environment: 'node' } });
+```
+
+`apps/web-ng/tsconfig.json`:
+
+```json
+{
+  "compileOnSave": false,
+  "compilerOptions": {
+    "outDir": "./dist/out-tsc",
+    "strict": true,
+    "noImplicitOverride": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "sourceMap": true,
+    "declaration": false,
+    "experimentalDecorators": true,
+    "moduleResolution": "node",
+    "importHelpers": true,
+    "target": "ES2022",
+    "module": "ES2022",
+    "useDefineForClassFields": false,
+    "lib": ["ES2022", "dom"]
+  },
+  "angularCompilerOptions": {
+    "enableI18nLegacyMessageIdFormat": false,
+    "strictInjectionParameters": true,
+    "strictInputAccessModifiers": true,
+    "strictTemplates": true
+  }
+}
+```
+
+`tsconfig.app.json` extends it with `outDir ./out-tsc/app`, `types: []`, `files: ["src/main.ts"]` and `include: ["src/**/*.d.ts"]`. `tsconfig.spec.json` extends it with `outDir ./out-tsc/spec`, `types: ["jasmine"]` and `include: ["src/**/*.spec.ts", "src/**/*.d.ts"]`. `noPropertyAccessFromIndexSignature` is on, so index-signature objects are read with bracket access where needed.
+
+`src/index.html`:
 
 ```html
 <!doctype html>
 <html lang="en">
-    <head>
-        <meta charset="UTF-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-        <title>AI Academy FDE Dashboard</title>
-    </head>
-    <body>
-        <div id="root"></div>
-        <script type="module" src="/src/main.tsx"></script>
-    </body>
+  <head>
+    <meta charset="utf-8" />
+    <title>AI Academy FDE Dashboard</title>
+    <base href="/" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  </head>
+  <body>
+    <app-root></app-root>
+  </body>
 </html>
 ```
 
-`apps/web/vite.config.ts`:
+`src/main.ts`:
 
 ```ts
-import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
-import tailwindcss from '@tailwindcss/vite';
-import { readFileSync } from 'node:fs';
-import { localData } from './vite-plugin-local-data';
+import { bootstrapApplication } from '@angular/platform-browser';
+import { appConfig } from './app/app.config';
+import { AppComponent } from './app/app.component';
 
-const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version: string };
-
-export default defineConfig({
-  // Shown in the footer.
-  define: { __APP_VERSION__: JSON.stringify(pkg.version) },
-  // LOCAL_DATA_DIR lets tests use a throwaway folder instead of ./local-data.
-  plugins: [react(), tailwindcss(), localData({ dir: process.env.LOCAL_DATA_DIR })],
-  server: {
-    host: "0.0.0.0",
-    port: 9009,
-    // Saving a snapshot must not trigger a page reload.
-    watch: { ignored: ['**/local-data/**', '**/mockups/**'] },
-  },
-});
+bootstrapApplication(AppComponent, appConfig)
+  .catch((err) => console.error(err));
 ```
 
-`apps/web/tsconfig.json`:
+`src/app/app.config.ts`: `providers: [provideRouter(routes, withComponentInputBinding())]`.
 
-```json
-{
-  "files": [],
-  "references": [{ "path": "./tsconfig.app.json" }, { "path": "./tsconfig.node.json" }]
-}
+`src/app/app.routes.ts`: pages load on demand with `loadComponent`, so the spreadsheet reader is downloaded only with the Upload page. Each route sets a document `title`:
+
+| Path | Component (file) | Title |
+|---|---|---|
+| `''` (pathMatch full) | `OverviewPage` (pages/views) | `AI Academy FDE Dashboard` |
+| `hs/:name` | `HyperScalerPage` (pages/views) | `HyperScaler · AI Academy FDE Dashboard` |
+| `people` | `PeoplePage` (pages/people) | `Employees · AI Academy FDE Dashboard` |
+| `upload` | `UploadPage` (pages/upload) | `Upload · AI Academy FDE Dashboard` |
+| `uploads` | `UploadsPage` (pages/uploads) | `Uploads · AI Academy FDE Dashboard` |
+| `uploads/:id` | `ImportSummaryPage` (pages/uploads) | `Upload summary · AI Academy FDE Dashboard` |
+| `**` | `redirectTo: ''` | |
+
+`src/app/app.component.ts` (selector `app-root`) has this template:
+
+```html
+<div class="app-shell">
+  <app-header />
+  <app-past-banner />
+  <main class="app-main"><router-outlet /></main>
+  <app-footer />
+</div>
 ```
 
-`apps/web/tsconfig.app.json`:
-
-```json
-{
-  "compilerOptions": {
-    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
-    "target": "ES2022",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "jsx": "react-jsx",
-    "strict": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true,
-    "isolatedModules": true,
-    "moduleDetection": "force",
-    "skipLibCheck": true,
-    "noEmit": true,
-    "types": ["vite/client"]
-  },
-  "include": ["src"]
-}
-```
-
-`apps/web/tsconfig.node.json`:
-
-```json
-{
-  "compilerOptions": {
-    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
-    "target": "ES2022",
-    "lib": ["ES2023"],
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "strict": true,
-    "noUnusedLocals": true,
-    "isolatedModules": true,
-    "moduleDetection": "force",
-    "skipLibCheck": true,
-    "noEmit": true,
-    "types": ["node"]
-  },
-  "include": ["vite.config.ts", "vite-plugin-local-data.ts"]
-}
-```
-
-`src/globals.d.ts`:
-
-```ts
-/** Injected by vite.config.ts from package.json. */
-declare const __APP_VERSION__: string;
-```
-
-`src/main.tsx`:
-- Creates a `QueryClient` with `defaultOptions: { queries: { staleTime: 30_000, refetchOnWindowFocus: false, retry: 1 } }`.
-- Renders `<StrictMode><QueryClientProvider><BrowserRouter><App/></BrowserRouter></QueryClientProvider></StrictMode>` into `#root`.
-- Imports `'@fontsource-variable/manrope'`, then `'./index.css'`.
-
-`src/App.tsx`:
-- Layout: `<div className="app-shell">` containing `<Header/>`, `<PastViewBanner/>`, `<main className="app-main">` with the routes, then `<Footer/>`.
-- Routes:
-
-| Path | Element |
-|---|---|
-| `/` | `Overview` |
-| `/hs/:name` | `HyperScalerView` |
-| `/people` | `People` |
-| `/upload` | `Upload` |
-| `/uploads` | `Uploads` |
-| `/uploads/:id` | `ImportSummary` |
-| `*` | `<Navigate to="/" replace />` |
+How to run: `cd apps/web-ng && npm install && npm start`. This starts the API on 9010 and `ng serve` on http://localhost:4200 together, via `concurrently`. The API server needs no `npm install`.
 
 ---
 
-## 5. Storage API: `vite-plugin-local-data.ts`
+## 5. Storage API: `apps/api/server.mjs`
 
-Copy Appendix F verbatim. Behaviour:
+Copy Appendix F verbatim. It is a plain `node:http` server with no dependencies. Behaviour:
 
-- The data dir is `path.resolve(config.root, options.dir ?? 'local-data')`. `LOCAL_DATA_DIR` overrides it (used by tests).
-- The middleware is mounted on both the dev server and the preview server, at `/api/snapshots` and `/api/mappings`.
+- `PORT` defaults to `9010`. The data dir is `$LOCAL_DATA_DIR`, else `apps/api/local-data`, resolved relative to the script's own folder. The script logs `FDE API on http://localhost:{PORT} · data in {dir}` on start.
+- The request path has its query string and trailing slashes stripped. Anything other than `/api/snapshots[/…]` or `/api/mappings` returns `404 { error: 'Not found' }`, and an unsupported method returns `405 { error: 'Method not allowed' }`.
 - Snapshot file name regex: `^(\d{6})-(\d{6})-(\d{6})\.csv$`. The name is `{latest completion date ddmmyy}-{upload date ddmmyy}-{upload time hhmmss}.csv`.
 - `GET /api/snapshots` returns a JSON array of `{ name, dataUpTo, uploadedOn, uploadedAt, sizeBytes }`, newest upload first. The sort key is yymmdd of the upload date plus hhmmss.
 - `GET /api/snapshots/latest`:
@@ -286,7 +390,7 @@ Copy Appendix F verbatim. Behaviour:
   - returns `204` when there are none.
 - `GET /api/snapshots/:name` returns the CSV text. It answers `400` "Invalid snapshot name" and `404` "Snapshot not found".
 - `POST /api/snapshots` takes the body `{ name, content }`.
-  - It validates the name and requires string content.
+  - It validates the name and requires string content ("Missing content").
   - It **never overwrites**: an existing name returns `409` "Snapshot already exists".
   - It writes atomically to `${target}.${pid}.tmp`, then renames, and returns `201 { name }`.
   - The body limit is 25 MB.
@@ -294,11 +398,9 @@ Copy Appendix F verbatim. Behaviour:
 - `PUT /api/mappings`:
   - requires a JSON object (otherwise `400` "Expected a JSON object");
   - writes it pretty-printed (2 spaces) atomically and returns `{ ok: true }`.
-- Every response sets `Cache-Control: no-store` and `Content-Type: … ; charset=utf-8`. Errors return `500 { error }`.
+- Every response sets `Cache-Control: no-store` and `Content-Type: … ; charset=utf-8`. Invalid JSON (`SyntaxError`) returns `400 { error }`, and other errors return `500 { error }`.
 
----
-
-## 6. Data model: `src/types.ts`
+## 6. Data model: `src/app/types.ts`
 
 ```ts
 /** Status of one level row: Completed / In progress / Not started. */
@@ -650,38 +752,57 @@ export interface Dataset { N: number; rowCount: number; enrollments: Enrollment[
 ```ts
 export const BRAND = {
   name: 'Your Company',               // placeholder; used in copyright and logo alt
-  logo: '/brand/logo.svg',            // wide wordmark (name inside the logo)
+  logo: 'assets/brand/logo.svg',      // wide wordmark (name inside the logo), served from src/assets
   copyright: '© {year} {name}. All rights reserved.',
   product: 'AI Academy FDE Dashboard',
 } as const;
 export function copyrightText(now = new Date()) { /* replace {year} with full year and {name} with BRAND.name */ }
-export const APP_VERSION: string = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : '';
+/** App version shown in the footer (keep in step with package.json). */
+export const APP_VERSION = '0.1.0';
 ```
 
 **`lib/levels.ts`** generates the indigo level ramp for any N, in OKLCH. Hue 277; lightness goes from 0.74 (L1) to 0.24 (top). Each colour gets white or `#1E1B4B` ink, whichever contrasts more. Copy Appendix D verbatim. `levelRamp(n)` returns `{ level, hex, ink }[]`, cached per n.
 
 **`lib/logos.ts`** holds the brand icons from Simple Icons v13 (CC0) for Anthropic, AWS, Google, GitHub, Red Hat OpenShift and Red Hat Ansible Automation. Azure is a lettered tile "Az" in `#0078D4`. Copy Appendix B verbatim.
 
-**`hooks/useData.ts`**
-- `useSnapshotParam()` reads `?snapshot=` and accepts it only if `isSnapshotId`, else `null` (which means latest).
-  - `setSnapshot(next)` sets or deletes the param, keeping the other params.
-- `useSnapshots()` = `useQuery({ queryKey: ['snapshots'], queryFn: listSnapshots })`.
-- `useData()`:
-  - queries `['snapshot', id ?? 'latest']` with `fetchSnapshot`;
-  - `dataset = useMemo(buildDataset(rows ?? []))`; `latestId` = the first snapshot's id.
-  - It returns:
-    - `dataset`, `snapshotId` (the loaded id, or null);
-    - `latestId`, `isPast` (`id !== null && latestId !== null && id !== latestId`);
-    - `isLoading`, `error`, `snapshots`.
-- `useSnapshotRows(id)` queries `['snapshot', id ?? 'none']`, and is enabled only when an id is given.
+**`src/app/core/data.service.ts`**: `@Injectable({ providedIn: 'root' }) class DataService`. This is the app-wide data store, built on signals.
+- `param = signal<string | null>`: the selected snapshot id from `?snapshot=`, or `null` for latest.
+  - It is read in the constructor, and again on every `NavigationEnd`, from `router.parseUrl(router.url).queryParamMap`.
+  - The value is accepted only if `isSnapshotId`; otherwise it is `null`.
+- `snapshots = signal<SnapshotInfo[]>`, filled by `refreshList()` (which calls `listSnapshots()`). It is called once in the constructor.
+- A private `loaded` signal holds `LoadedSnapshot | null`, alongside `loading = signal(true)`, `error = signal<string | null>` and a private `Map` cache of loaded snapshots keyed by `'latest'` or an id.
+- Computed signals:
+  - `rows` = `loaded()?.rows ?? []`;
+  - `dataset` = `buildDataset(rows())`;
+  - `snapshotId` = `loaded()?.id ?? null`;
+  - `latestId` = `snapshots()[0]?.id ?? null`;
+  - `isPast` = `param !== null && latestId !== null && param !== latestId`.
+- An `effect(() => load(param() ?? 'latest'), { allowSignalWrites: true })` loads the selected month.
+- `load(id)`:
+  - On a cache hit, it sets `loaded` immediately and sets `loading` to false.
+  - Otherwise it sets `loading` true, clears `error`, calls `fetchSnapshot`, and caches the result. It sets `loaded` only if `param() ?? 'latest'` still equals the id it was loading. Errors go to `error` as a message string. `loading` is set to false at the end.
+- `snapshot(id)` returns any one snapshot, cached; the import summary uses it.
+- `afterUpload()` deletes the `'latest'` cache entry, awaits `refreshList()`, and reloads latest when no past month is selected.
+- `setSnapshot(id | null)` calls `router.navigate([], { queryParams: { snapshot: id }, queryParamsHandling: 'merge' })`. A `null` id removes the param.
+- Exported helper `withSnapshot(url, snap)` appends `snapshot=<encoded id>` with `?` or `&` when `snap` is set.
 
-**`components/SnapLink.tsx`** exports `SnapLink` and `SnapNavLink`, wrappers around `Link` / `NavLink`. When the current URL has `?snapshot=`, they append `snapshot=<id>`, with `?` or `&` as needed, so a past view stays past while navigating. **Every internal link in the dashboard uses these**, except on the Uploads page (see 12.6).
+**`src/app/core/snap-link.directive.ts`**: `@Directive({ selector: 'a[snapLink]', standalone: true })`, with a required `@Input() snapLink: string`.
+- It binds `attr.href` to `withSnapshot(snapLink, data.param())`, so a past view stays past while navigating.
+- On a plain left click it calls `preventDefault()` and `router.navigateByUrl(href)`.
+- Ctrl/Cmd/Shift/Alt-click and middle-click keep the browser default (a new tab or window).
+- **Every internal link in the dashboard is an `<a [snapLink]="…">`**. The exceptions are the header nav (`routerLink` with `[queryParams]`), the Uploads page, and the "Upload" button.
+
+**`src/app/core/fill.ts`**:
+- `startFill(destroyRef, delay, dur = 1300): Signal<number>` returns a signal going 0→1, eased with cubic ease-out via `requestAnimationFrame`, once. The animation frame is cancelled on destroy.
+- It returns 1 straight away under `prefers-reduced-motion`, or when `requestAnimationFrame` doesn't exist.
+- `prefersReducedMotion()` is exported too.
+- Components create their fill in `ngOnInit` (`this.e = startFill(this.destroyRef, …)`), with `e` initialised to `signal(reduced ? 1 : 0)`. Inputs such as `i` are therefore available when the fill starts.
 
 ---
 
 ## 10. Visual design system
 
-The full stylesheet is Appendix A. Copy it verbatim as `src/index.css`. It starts with `@import 'tailwindcss';` and defines the tokens:
+The full stylesheet is Appendix A. Copy it verbatim as `apps/web-ng/src/styles.css`, a global stylesheet listed in `angular.json`; components have no styles of their own. It starts with the Tailwind v3 directives `@tailwind base; @tailwind components; @tailwind utilities;`. The Tailwind colour and font names come from `tailwind.config.js` (§4). The stylesheet defines the tokens:
 
 - Page `--bg #f4f6fb`, cards `#fff`, lines `#e3e8f2`, ink `#0f1b3d`, ink-2 `#44506b`, muted `#6b7690`, brand `#1d4ed8` (hover `#1e40af`), wash `#eef2ff`.
 - Status `--done #16a34a`, `--wip #2563eb`, `--ns #94a3b8`, and `--none #e2e8f0` for "no level yet".
@@ -701,7 +822,7 @@ The full stylesheet is Appendix A. Copy it verbatim as `src/index.css`. It start
 - Focus ring: `2px solid #6366f1`, offset 2.
 
 ### Motion rules
-- `useFill(delay, dur = 1300)` returns 0→1, eased with cubic ease-out (`1-(1-t)^3`) via `requestAnimationFrame`, **once per mount**. Under `prefers-reduced-motion` it returns 1 immediately.
+- `startFill(destroyRef, delay, dur = 1300)` (`core/fill.ts`) returns a signal going 0→1, eased with cubic ease-out (`1-(1-t)^3`) via `requestAnimationFrame`, **once per mount**. Under `prefers-reduced-motion` it returns 1 immediately.
 - Liquid cards add the class `moving` while filling (`0 < e < 1`) or while hovered/focused. The CSS wave animation is `paused` by default and `running` only with `.moving`, so it freezes in place without a jump.
 - Funnel glasses wave while pouring or on hover/focus. Pour bars show a rippling front edge while pouring.
 - After about 2 s, nothing on the page moves.
@@ -710,24 +831,74 @@ The full stylesheet is Appendix A. Copy it verbatim as `src/index.css`. It start
 
 ## 11. Components
 
-### 11.1 `Header.tsx` (design "W2": one light, sticky bar)
+**Angular conventions used by every component below**
+- Every component is `standalone: true`, imports exactly the components and directives it uses, and has an inline `template` and no `styles`.
+- Small presentational components set `host: { style: 'display:contents' }`, so the host element doesn't break the CSS grid and flex layouts: `app-icon`, `app-hs-logo`, `app-lvl-chip`, `app-new-tag`, `app-status-bar`, `app-num`, `app-lab`, `app-compare`, `app-liquid-card`, `app-insight-cards`, `app-pour-bar`, `app-card-head`, `app-number-tile` and `app-levels-body`. `app-stepper` instead has the host style `margin-left:auto`.
+- Inputs are `@Input()` fields; required ones use `@Input({ required: true })`. Function inputs, such as `to: (st) => string`, are passed as arrow-function class fields.
+- Values derived from inputs are computed in `ngOnChanges` (for example HsCards rows, Fluid card segments and the PeopleTable sort) or in getters. Page state uses `signal` and `computed`.
+- Wherever the text below says **"SnapLink to X"**, use `<a [snapLink]="X">`, or `<a snapLink="/">` for a static path. The class, title and aria attributes go on that `<a>`.
+- Where a React-style "children(e)" render function is described for liquid cards, Angular uses **content projection plus a template reference**: `<app-liquid-card #c [i]="1" …><app-num [value]="v" [e]="c.e()" /></app-liquid-card>`. The card exposes its public `e` signal.
+- Inside a card, the body markup is written once in an `<ng-template #body>` and rendered with `*ngTemplateOutlet` (`NgTemplateOutlet`) inside an `<a [snapLink]>`, a `<button type="button">`, or a `<div>`. The same pattern is used in PourBar, for segment content, and in FunnelGlasses, for the glass.
+
+| Spec name below | Angular class / selector | File |
+|---|---|---|
+| Header | `HeaderComponent` / `app-header` | ui/shell.ts |
+| SnapshotPicker | `SnapshotPickerComponent` / `app-snapshot-picker` | ui/shell.ts |
+| Footer | `FooterComponent` / `app-footer` | ui/shell.ts |
+| PeopleTable, exportPeopleCsv | `PeopleTableComponent` / `app-people-table` | ui/shell.ts |
+| PastViewBanner | `PastBannerComponent` / `app-past-banner` | ui/basics.ts |
+| Icons | `IconComponent` / `app-icon` | ui/basics.ts |
+| HsLogo | `HsLogoComponent` / `app-hs-logo` | ui/basics.ts |
+| LvlChip | `LvlChipComponent` / `app-lvl-chip` | ui/basics.ts |
+| NewTag | `NewTagComponent` / `app-new-tag` | ui/basics.ts |
+| StatusBar | `StatusBarComponent` / `app-status-bar` | ui/basics.ts |
+| Breadcrumb (`Crumb = { label, to? }`) | `BreadcrumbComponent` / `app-breadcrumb` | ui/basics.ts |
+| Stepper | `StepperComponent` / `app-stepper` | ui/basics.ts |
+| HsTabs | `HsTabsComponent` / `app-hs-tabs` | ui/basics.ts |
+| DataQuality | `DataQualityComponent` / `app-data-quality`, plus the exported `qualityItems(q, sum, base): Part[][]` with `Part = { t: string; b?: boolean; to?: string }` (plain text, bold, or link), rendered by the template | ui/basics.ts |
+| Num, Lab, Compare | `NumComponent` / `app-num`, `LabComponent` / `app-lab` (`<ng-content/>` with an optional dot), `CompareComponent` / `app-compare` | ui/liquid.ts |
+| LiquidCard | `LiquidCardComponent` / `app-liquid-card` | ui/liquid.ts |
+| StatusCards, InsightCards, HsCards, `countChecks`, `WAVE` | `StatusCardsComponent` / `app-status-cards`, `InsightCardsComponent` / `app-insight-cards`, `HsCardsComponent` / `app-hs-cards` | ui/liquid.ts |
+| PourBar, CardHead | `PourBarComponent` / `app-pour-bar`, `CardHeadComponent` / `app-card-head` (title, tip, `<ng-content/>` for the right-hand controls) | ui/fluid.ts |
+| LevelStatusCard, FunnelGlasses, HighestCard, BreakdownCard | `LevelStatusCardComponent` / `app-level-status-card`, `FunnelGlassesComponent` / `app-funnel-glasses`, `HighestCardComponent` / `app-highest-card`, `BreakdownCardComponent` / `app-breakdown-card` | ui/fluid.ts |
+| StatRow, NumberTile | `StatRowComponent` / `app-stat-row`, `NumberTileComponent` / `app-number-tile` | ui/fluid.ts |
+
+Angular-specific details of these components:
+- **LiquidCard** inputs: `i`, `level?`, `tone?`, `link?` (renders an `<a [snapLink]>`), `clickable` (renders a `<button>` and emits `@Output() act`), `warn`, `bad`, `compact`, `state?`, `corner?: string`, and `tubes?: Counts`.
+  - Instead of an `extra` render prop, passing `tubes` draws the three mini tubes of the Total-enrolled card.
+  - Hover and focus set a private `hovered` signal; it stays false under reduced motion.
+  - `cls` joins the classes, dropping empty ones.
+- **Fluid cards**: an abstract `@Directive() class Fills implements OnInit` holds `fillDelay` (150), `fillDur` (1500) and the `e` signal.
+  - LevelStatusCard uses 150/1500, FunnelGlasses overrides to 250/1600, HighestCard to 350/1500, and BreakdownCard to 200/1300.
+- **PourBar** `Seg` has `label?: string` and `sub?: string`. When `sub` is set, the segment content is `<span class="two"><b>{label}</b><small>{sub}</small></span>`; the HighestCard segments use this. The label shows only when `!!label && total > 0 && v/total ≥ minShare`.
+- **Status-per-level legend** is static HTML: `<div class="fl-legend">` with three `<span><i class="dot done|wip|ns"></i>Label</span>`.
+- **FunnelGlasses** computes `steps: { key, label, lv?, v, color, to?, share, conv, pill, kind: ''|'worst'|'over' }[]` in `ngOnChanges`. The glass label is `<app-lvl-chip> ✓` for level steps and the text label otherwise.
+- **BreakdownCard** holds `by`, `sort` and `all` as fields and recomputes `shown` rows `{ r, name, to, width, segs, started }` on every change. The sort `<select>` uses `[value]` and `(change)`.
+- **PeopleTable** projects the toolbar through `<ng-content select="[toolbar]" />`; the page puts the `toolbar` attribute on the toolbar div.
+  - Sorting and paging state are plain fields: `sorted`, `rows`, `pages`, `p`.
+  - `ngOnChanges` resets the page to 0 and re-sorts whenever the list changes.
+  - The columns come from a `cols` array. Email ID is not sortable, and the HyperScaler column is skipped when `hideHs` is set.
+- **DataQuality**'s `base` input defaults to `{}`.
+- **StatusBar** binds `[style.flex]` to the count. The `<a>`/`<i>` segment gets `[class]` = the status key.
+
+### 11.1 `HeaderComponent` (`app-header`, ui/shell.ts; design "W2": one light, sticky bar)
 
 `<header class="app-hdr">` contains, left to right:
 
 1. `SnapLink to="/" class="app-brand"` (aria-label `"{BRAND.name}: {BRAND.product} home"`) wrapping `<img class="app-logo" src={BRAND.logo} alt="{BRAND.name} logo">`. The logo is 40 px tall, max 360 px wide.
 2. `<span class="app-sep">`, a 1 px vertical divider.
 3. `SnapLink to="/" class="app-title"` showing the product name. Its `margin-right: auto` pushes the rest right.
-4. `<nav class="hnav" aria-label="Main">`, a segmented pill with three `SnapNavLink`s:
-   - "Dashboard" (`to="/" end`, active also when the path starts with `/hs/`);
-   - "Employees" (`/people`);
-   - "Uploads" (`/uploads`).
+4. `<nav class="hnav" aria-label="Main">`, a segmented pill with three `routerLink` anchors. Each has `[queryParams]="qp()"`, where `qp = computed(() => param ? { snapshot: param } : {})`, so a past month is kept:
+   - "Dashboard" (`['/']`): the class `active` is set by the getter `isDash`, which is true when the path before `?` is `/` or starts with `/hs/`;
+   - "Employees" (`['/people']`, `routerLinkActive="active"`);
+   - "Uploads" (`['/uploads']`, `routerLinkActive="active"`).
    - The active item has a white background, brand colour and a shadow.
-5. `<SnapshotPicker/>`.
-6. `<button class="btn-up">` with the Upload icon and "Upload". It navigates to `/upload`.
+5. `<app-snapshot-picker />`.
+6. `<button class="btn-up">` with `<app-icon name="upload" />` and "Upload". It calls `router.navigateByUrl('/upload')`.
    - When viewing a past month it is **disabled**, with title "Switch to the latest data to upload".
    - Otherwise its title is "Upload the monthly Excel / CSV".
 
-### 11.2 `SnapshotPicker.tsx` ("Month" control)
+### 11.2 `SnapshotPickerComponent` (`app-snapshot-picker`, ui/shell.ts; the "Month" control)
 
 - It renders nothing when there are no snapshots.
 - The button is `.chip` (amber `.past` variant when isPast), with `aria-haspopup="listbox"` and `aria-expanded`. It shows:
@@ -746,7 +917,7 @@ The full stylesheet is Appendix A. Copy it verbatim as `src/index.css`. It start
   - Clicking the first (newest) option clears `?snapshot`; any other sets it. Either way the popover closes.
   - It also closes on an outside mousedown or on Escape.
 
-### 11.3 `PastViewBanner.tsx`
+### 11.3 `PastBannerComponent` (`app-past-banner`, ui/basics.ts)
 
 - Shown only when `isPast`.
 - It is a `.banner-past` strip (amber), `role="status"`, with an inner container `max-w-[1480px] mx-auto px-10 py-2.5 flex items-center gap-3 text-[13.5px]`. It contains:
@@ -754,7 +925,7 @@ The full stylesheet is Appendix A. Copy it verbatim as `src/index.css`. It start
   - "You're viewing **{Mon YYYY}** data (uploaded {snapshotLabel}). It's read-only, and uploading is off until you go back to the latest data.";
   - a `btn sm ghost ml-auto` button "Back to latest →", which clears the snapshot param.
 
-### 11.4 `Footer.tsx` (design "F2")
+### 11.4 `FooterComponent` (`app-footer`, ui/shell.ts; design "F2")
 
 `<footer class="app-ftr">` contains:
 - `<img class="ftr-logo">`, decorative;
@@ -764,7 +935,7 @@ The full stylesheet is Appendix A. Copy it verbatim as `src/index.css`. It start
   - `.ftr-ver` "v{APP_VERSION}".
 - The footer always sits at the bottom of the viewport (`.app-shell` is a flex column with min-height 100vh).
 
-### 11.5 `HsLogo.tsx`
+### 11.5 `HsLogoComponent` (`app-hs-logo`, ui/basics.ts)
 
 `<span class="hs-logo [sm]" style="--b: brandColour" aria-hidden>` shows either:
 - an `<svg viewBox="0 0 24 24">` with the Simple Icons paths; or
@@ -772,11 +943,11 @@ The full stylesheet is Appendix A. Copy it verbatim as `src/index.css`. It start
 
 The colour comes from the logo, else the tile, else `#1e3a8a`. The tile background and border are `color-mix` tints of `--b`.
 
-### 11.6 `icons.tsx`
+### 11.6 `IconComponent` (`app-icon`, ui/basics.ts)
 
-Inline SVG icons: Star, Upload, Search, Users, Award, Plus, Calendar, Clock, Progress, History, Download, File. Copy Appendix C verbatim.
+A single component with a required `name: 'upload' | 'search' | 'history' | 'download' | 'file'` input. It renders the matching inline SVG through `@switch`. Copy Appendix C verbatim; it is part of `ui/basics.ts`.
 
-### 11.7 `fde.tsx`: shared pieces
+### 11.7 ui/basics.ts: shared pieces
 
 - `LvlChip({lv, N})` renders `<span class="lvl">L{lv}</span>`, with the background and ink from `levelRamp(max(N, lv))[lv-1]`.
 - `NewTag({name})` renders `<span class="tag-new" title="Not one of the 7 known HyperScalers: added automatically from the uploaded file">added from file</span>` for unknown HyperScalers, and null otherwise.
@@ -812,20 +983,20 @@ Inline SVG icons: Star, Upload, Search, Users, Award, Plus, Calendar, Clock, Pro
   - With no items, render `.dq ok`: an `.h2` "✓ Data checks passed{ for {scope}}" and an `.h2-sub` in `#166534`: "Levels are cumulative (L1 ≥ L2 ≥ …), no duplicate rows, no skipped levels, and every employee has an Org, Band and Email ID."
   - Otherwise render `.dq` (amber): an `.h2` "⚠ Data checks{: {scope}}" and a `<ul>` (margin-top 6) of `<li>`.
 
-### 11.8 `liquid.tsx`: liquid cards
+### 11.8 ui/liquid.ts: liquid cards
 
 - `Num({ value, e, dec = 0, suffix = '', cls = 'n68' })` renders `<span class="bignum {cls} [counting when e<1]">` showing `value*e`. With `dec` it uses `toFixed(dec)`, else `fmtNum(Math.round(v))`, followed by the suffix.
 - `WAVE = 'M0 10 Q 25 0 50 10 T 100 10 T 150 10 T 200 10 V20 H0Z'`.
 - `Liquid({level, tone})` renders `<div class="liq {tone}" style="height:{level}%">` with two `<svg class="wave">` / `<svg class="wave w2">` (viewBox 0 0 200 20, `preserveAspectRatio="none"`), each holding the WAVE path.
-- `LiquidCard({ i, level?, tone?, to?, onClick?, warn?, bad?, compact?, state?: 'selected'|'dim', corner?, children: (e)=>node, extra?: (e)=>node })`:
-  - `e = useFill(i * 110)`, with hover handlers on mouse enter/leave and focus/blur.
+- `LiquidCard` (inputs `i`, `level?`, `tone?`, `link?`, `clickable` + `(act)`, `warn`, `bad`, `compact`, `state?: 'selected'|'dim'`, `corner?`, `tubes?`; projected content):
+  - `e = startFill(destroyRef, i * 110)`, set in `ngOnInit`. It has hover handlers on mouse enter/leave and focus/blur (the `<div>` variant handles mouse only).
   - Class: `lq {state} {tone} [sm] [warn] [bad] [moving]`.
   - Body:
     - the Liquid at height `max(level, 4) * e` %, only when both `level` and `tone` are set;
-    - then `extra(e)`;
+    - then the `.tubes` (when `tubes` is set);
     - then `<span class="lq-corner">{corner}</span>`;
     - then `<div class="in">{children(e)}</div>`.
-  - It renders as a `SnapLink` when `to` is set, a `<button type="button">` when `onClick` is set, else a `<div>`.
+  - It renders as an `<a [snapLink]>` when `link` is set, a `<button type="button">` (emitting `act`) when `clickable` is set, else a `<div>`.
 - `Lab({children, dot?})` renders `<div class="lq-lab">` with an optional `<i class="dot {st}">`.
 - `Compare({ v, pv })` compares percentages: `d = v − pv`.
   - When `|d| < max(0.1, pv × 0.1)` it shows "≈ same as Overall ({pv.toFixed(1)}%)" with class `cmpb eq`.
@@ -835,7 +1006,7 @@ Inline SVG icons: Star, Upload, Search, Users, Award, Plus, Calendar, Clock, Pro
      - The sub-line reads:
        - with a parent (a HyperScaler view): "{pct(total, parent.employees, 0)}% of all {parent.employees} employees";
        - otherwise: "{employees} employees".
-     - `extra` adds `.tubes`: 3 vertical tubes (done, wip, ns). Each is filled to `max(share %, 4) * e`.
+     - `[tubes]="sum.s"` adds `.tubes`: 3 vertical tubes (done, wip, ns). Each is filled to `max(share %, 4) * e`.
   1. **In progress**, 2. **Completed**, 3. **Not started**, in that order, with `i = 1..3`.
      - Each card has the liquid at that status's share, tone = the status, links to `peopleUrl({...base, st})`, and a label with a status dot.
      - Each shows `Num` and the sub "{pct}% of total". On Completed, " · all {levels.length} levels" is appended when there is more than 1 level.
@@ -863,7 +1034,7 @@ Inline SVG icons: Star, Upload, Search, Users, Award, Plus, Calendar, Clock, Pro
     - Hover lifts the card 2 px with an indigo border.
   - Without data (base ones only): `<div class="sq empty">` with dashed styling and a greyscale logo. It shows the name, a `.tag-nod` "no data", an n42 "0" with "employees", an empty striped `.sbar`, `.dn z` "No rows in the {monthLabel} file", and `.go` "—" in muted.
 
-### 11.9 `fluid.tsx`: the lower sections
+### 11.9 ui/fluid.ts: the lower sections
 
 - `Seg = { key, v, cls?: St | 'none', color?, ink?, label?, to?, title }`.
 - `PourBar({ segs, e, h = 34, minShare = 0.05, label })`:
@@ -877,14 +1048,14 @@ Inline SVG icons: Star, Upload, Search, Users, Award, Plus, Calendar, Clock, Pro
 - `Legend` renders `.fl-legend` with 3 dots and labels.
 - `LevelStatusCard({ sum, N, base, unit })`, titled **"Status per level"**:
   - Tip: "Every level counts all {total} {unit}; a level with no row in the file counts as Not started. Click a segment for the list."
-  - `e = useFill(150, 1500)`, then the Legend.
+  - fill (150, 1500), then the Legend.
   - One `.fl-lvrow` per level, in a grid of 44px / 1fr / 84px:
     - a LvlChip;
     - a PourBar of status segs, each linking to `peopleUrl({...base, lv, ls})`, with `e` = `min(1, e*1.15 − i*0.05)`;
     - a `SnapLink class="fl-done"` "✓ {round(done*e)}" linking to `lv, ls=done` (title "L{n} completed").
 - `FunnelGlasses({ sum, N, base, unit })`, titled **"Level funnel"**:
   - Tip: "Each glass is filled to its share of everyone; the pill between two glasses is the share that continues from the previous step."
-  - `e = useFill(250, 1600)`.
+  - fill (250, 1600).
   - The steps are:
     - `unit` with the first letter capitalised (e.g. "Enrollments" / "Employees"): v = total, colour `#cbd5e1`, links to `peopleUrl(base)`;
     - "Started": v = started, colour `#93c5fd`, no link;
@@ -902,7 +1073,7 @@ Inline SVG icons: Star, Upload, Search, Users, Award, Plus, Calendar, Clock, Pro
     - otherwise the title "Share that continues".
 - `HighestCard({ sum, N, base, unit })`, titled **"Highest level completed"**:
   - Tip: "Each {employee|enrollment} is counted once, at the highest level they completed."
-  - `e = useFill(350, 1500)`.
+  - fill (350, 1500).
   - When `reached == 0`, a `.fl-note` reads "**No level completed yet.** {wip} {unit} are in progress."
   - A PourBar with `h = 55` and `minShare = 0.045` holds these segments:
     - "none": colour `var(--none)`, ink `#334155`, label `Two(n, "No level yet")`, links to `hi=0`, title "No level completed yet: {n}";
@@ -915,7 +1086,7 @@ Inline SVG icons: Star, Upload, Search, Users, Award, Plus, Calendar, Clock, Pro
     - `<label class="fl-sort">Sort <select class="sel">` with the options "Enrollments" (or "Employees" when not `multi`), "% started" and "Completed".
   - Sort (descending): total, started ratio, or done count, with `''` always last, then name.
   - It shows the first 8 rows. A `.bd-more` button toggles between "Show all {n} ▾" and "Show fewer ▴".
-  - `e = useFill(200, 1300)`.
+  - fill (200, 1300).
   - Each row is a `SnapLink class="bd-row [other when name '']"` linking to `peopleUrl({...base, org|band: name})`. The grid columns are `minmax(180px,1.2fr) 70px minmax(0,2.618fr) 110px 64px 20px`. Each row holds:
     - `.bd-name`: `orNone(name)`, plus `<small>{employees} employees</small>` when `multi`;
     - an n26 bignum total;
@@ -929,7 +1100,7 @@ Inline SVG icons: Star, Upload, Search, Users, Award, Plus, Calendar, Clock, Pro
   - When `active` is set, the matching card gets `state="selected"` (a ring in its status colour: done `#15803d`, wip `#2563eb`, ns `#64748b`) and the corner tag "✓ Filter on". The others get `dim` (opacity .5).
 - `NumberTile({ i, label, value, sub? })` is a compact LiquidCard without liquid, showing an n42 number.
 
-### 11.10 `PeopleTable.tsx`
+### 11.10 `PeopleTableComponent` (`app-people-table`) and `exportPeopleCsv` (ui/shell.ts)
 
 - `LevelStatusChips({e})` renders one `.st {status}` chip per level reading "L{n}" plus a symbol: ✓ done, ◐ wip, – ns.
   - Title "L{n}: {Label}{ · ETA {date}}"; aria-label "L{n} {Label}".
@@ -967,9 +1138,11 @@ Inline SVG icons: Star, Upload, Search, Users, Award, Plus, Calendar, Clock, Pro
 
 ## 12. Pages
 
-### 12.1 Shared `Gate` (in `Views.tsx`)
+### 12.1 Shared `GateComponent` (`app-gate`) and `LevelsBodyComponent` (`app-levels-body`), in pages/views.ts
 
-- While loading: `<div class="page muted">Loading…</div>`.
+- `GateComponent` wraps its page with `<ng-content/>` and reads `DataService`:
+  - while loading, and only when nothing is loaded yet (`loading() && !snapshotId()`), it shows `<div class="page muted">Loading…</div>`. A month switch keeps showing the old data until the new one arrives.
+- Inside the gate, the Overview and HyperScaler pages wrap their content in `@if (data.snapshotId(); as id) { … }`.
 - On error: `.empty big` with "**Couldn't load the data**" and the error message.
 - With no snapshot or no enrollments: `.empty big` containing:
   - "○" at 28 px;
@@ -977,13 +1150,13 @@ Inline SVG icons: Star, Upload, Search, Users, Award, Plus, Calendar, Clock, Pro
   - "Upload this month's sheet (Emp ID, Name, Reporting Orgn, Band, HyperScaler, ETA (Date), Certificate done/WIP, Certification Levels, Email ID).";
   - a `SnapLink class="btn primary mt-2"` to `/upload`: "Upload the monthly sheet →".
 
-`Body({ d, base, unit })` is shared by Overall and each HyperScaler. It computes the list (`applyFilter(base)`), the summary and the org/band groups, then renders:
+`LevelsBodyComponent` (`app-levels-body`, inputs `d`, `base`, `unit`) is shared by Overall and each HyperScaler. In `ngOnChanges` it computes the list (`applyFilter(base)`), the summary and the org/band groups, then renders:
 - `.sec` "Levels".
 - If `d.N > 0`: `FunnelGlasses`, then a `.grid2` with `LevelStatusCard` and `HighestCard`.
 - Otherwise `.empty` with "○" and "**No Certification Levels in this file.** Every row has an empty level, so per-level status can't be shown."
 - `.sec` "Breakdown", then `BreakdownCard` with `multi = !base.hs`.
 
-### 12.2 Overview (`/`)
+### 12.2 `OverviewPage` (`/`, pages/views.ts)
 
 From top to bottom:
 1. `HsTabs`, with Overall active.
@@ -994,7 +1167,13 @@ From top to bottom:
    - `.sec` "HyperScalers", then `HsCards(d, dataMonth)`;
    - `Body(unit="enrollments")`.
 
-### 12.3 HyperScaler view (`/hs/:name`)
+### 12.3 `HyperScalerPage` (`/hs/:name`, pages/views.ts)
+
+Angular wiring:
+- `name = toSignal(route.paramMap.pipe(map(p => p.get('name') ?? '')), { initialValue: '' })`.
+- `filter` (`{ hs: name }`), `crumbs`, `shown`, `base` (is a base HyperScaler), `known` (base or known), `levels` and `view` are all `computed`.
+- `view` = `null` when the HyperScaler has no data; otherwise `{ list, sum, quality: subsetQuality(list, sum, d.quality.profileConflicts) }`.
+- The `.meta` line, the Stepper and the empty state follow from these.
 
 - `base = { hs: name }`.
 - The header block holds:
@@ -1016,7 +1195,7 @@ From top to bottom:
       - on the right, `SnapLink class="btn sm ghost ml-auto"` "Open the full list ({n}) ›", linking to `peopleUrl(base)`;
       - then `PeopleTable(list, hideHs, limit 10)`.
 
-### 12.4 Employees (`/people?hs=&org=&band=&st=&lv=&ls=&hi=&flag=`)
+### 12.4 `PeoplePage`, pages/people.ts (`/people?hs=&org=&band=&st=&lv=&ls=&hi=&flag=`)
 
 **Reading the filter from the URL**
 - `hs`, `org` and `band` apply whenever present (they can be empty strings).
@@ -1056,7 +1235,7 @@ The hs chip is of kind hs, the st and lv+ls chips are of kind status, and the re
    - `.ph-context` with the context line;
    - `.meta` "{n} enrollment(s) · {m} employee(s) · one row per employee × HyperScaler".
 2. `StatRow`:
-   - keyed by `params + q`, so it re-animates when they change;
+   - it isn't re-created when the filters change, so the fill plays once per page visit;
    - total label "In this list" and sub "{m} employee(s) · {n} enrollment(s)";
    - `active = filter.st`.
    - Each status card links to `/people?{current params without snapshot, with st=k}`. Clicking the active status removes `st`. SnapLink re-adds the snapshot.
@@ -1072,9 +1251,17 @@ The hs chip is of kind hs, the st and lv+ls chips are of kind status, and the re
    - Export file name: `employees-{Mon-YYYY or 'data'}{-chipLabel with [^A-Za-z0-9]+→_ …}.csv`, truncated to 150 characters.
 4. A 12 px muted footnote: "Status = Completed when the top level (L{N}) is completed, In progress when any level is started, otherwise Not started. Hover a level chip for its status and ETA. ✓ completed · ◐ in progress · – not started."
 
-Loading and error states: "Loading…", or `.empty big` with the message.
+Loading and error states: "Loading…" (when `loading() && !snapshotId()`), or `.empty big` with the error message.
 
-### 12.5 Upload (`/upload`)
+Angular wiring:
+- `params = toSignal(route.queryParamMap, { requireSync: true })`, `filter = computed(() => readFilter(params()))`, `q = signal('')` (the search box binds `[value]`/`(input)`).
+- `list`, `sum`, `employees`, `totalSub`, `orgs`, `bands`, `chips`, `heading`, `contextLine` and `crumbs` are all `computed`.
+- The selects bind `[value]` / `[selected]` and `(change)`.
+- `setParam(k, v)` and `remove(keys)` call `router.navigate([], { relativeTo: route, queryParams, queryParamsHandling: 'merge' })`. They set `null` to delete a param, so `snapshot` is kept.
+- `statusLink(k)` builds `/people?…` from the current params without `snapshot` and `st`, and adds `st=k` unless `k` is already active. The `snapLink` directive re-adds the snapshot.
+- The status badge and the filter chips use class bindings (`[class.st-chip]`, `[class.hs-chip]`, `[class.done|wip|ns]`).
+
+### 12.5 `UploadPage` (`/upload`, pages/upload.ts)
 
 - Breadcrumb "Overall › Upload monthly sheet".
 - `h1.title` "Upload this month's sheet".
@@ -1096,7 +1283,9 @@ Loading and error states: "Loading…", or `.empty big` with the message.
 - No sheets gives: "No table found in this file. Make sure it has a header row with the column names."
 - A read failure gives: "Couldn't read this file: {message}".
 - Errors are shown as a `pill r` block. Errors loading saved choices are shown the same way.
-- Saved mappings are queried with `['mappings']`.
+- Saved mappings are loaded once in `ngOnInit` with `fetchMappings()` into the private signal `saved`. `savedLoading` and `savedError` signals track progress. All derived state (`sheet`, `missing`, `mappings`, `validation`, `preview`, `errors`, `warnings`, `undecided`, `stats`, `hsOptions`, `levelOptions`, `statusList`, `levelList`, `fileHint`) is `computed`.
+- Choices are changed with `choose('status', key, value)`, `chooseLevel(key, v)` and `chooseHs(h, v)`; choosing the default `h.name` deletes the entry.
+- The drop zone uses `(dragover)`, `(dragleave)`, `(drop)`, `(keydown.enter)` and `(keydown.space)`, plus a `#input` template reference for `input.click()`.
 - The validation runs only when a file is loaded, no required column is missing and the saved mappings have loaded. It uses `merge(saved, choices)` (per-kind spread) and `savedHsKeys` = the keys of the **saved** hyperscaler mappings.
 
 **After a file is loaded**
@@ -1141,8 +1330,8 @@ Loading and error states: "Loading…", or `.empty big` with the message.
 1. Build `hsDefaults`: for every new HyperScaler, `choices.hyperscaler[key] ?? name`, so "kept as new" is remembered as itself.
 2. Save `merge(saved, {...choices, hyperscaler: {...choices.hyperscaler, ...hsDefaults}})` with `PUT /api/mappings`.
 3. Call `runImport(rows without sourceRow, latestDoneDate)`.
-4. Invalidate the queries `['mappings']`, `['snapshots']` and `['snapshot','latest']`.
-5. Navigate to `/uploads/{id}` with the router state `ImportNavState`:
+4. `await data.afterUpload()`, which refreshes the snapshot list and reloads latest.
+5. `router.navigateByUrl('/uploads/{id}', { state })` with the router state `ImportNavState`, defined and exported in `pages/uploads.ts`:
    - `fileName`, `sheetName`, `issues`, `rowsSaved`, `skippedByChoice`;
    - `decisions: string[]`, made of:
      - `Status "{key}" → {Label | rows skipped}`;
@@ -1150,12 +1339,11 @@ Loading and error states: "Loading…", or `.empty big` with the message.
      - `HyperScaler "{raw}" added as new` or `HyperScaler "{raw}" → {target}`;
    - `newHyperscalers`: the names of those kept as new.
 
-### 12.6 Uploads (`/uploads`)
+### 12.6 `UploadsPage` (`/uploads`, pages/uploads.ts)
 
 - Breadcrumb "Overall › Uploads".
 - `h1.title` "Monthly uploads", with the sub "Each upload is one month's data (the month it was uploaded), kept as its own file in `local-data/`. Open any month to see the dashboard as it was."
 - The panel shows:
-  - while loading: "Loading…";
   - when empty: `.empty big` with "**No uploads yet.**" and a link "Upload this month's sheet →".
 - Otherwise it's a `table.data` with these columns:
   - "Data month": bold, plus a `pill i` "Latest" on the first row;
@@ -1167,12 +1355,17 @@ Loading and error states: "Loading…", or `.empty big` with the message.
     - `btn sm primary` "View this data" navigates to `/` for the first row, else `/?snapshot={id}`;
     - `btn sm ghost` "Summary" opens `/uploads/{id}`;
     - `btn sm ghost` "CSV" downloads `{id}.csv` (aria-label "Download {id}.csv").
-- This page uses plain `navigate` and `Link`, not SnapLink.
+- There is no separate loading state: it renders from `data.snapshots()` and shows the empty state until the list arrives.
+- This page uses plain `router.navigate(['/'], { queryParams: id ? { snapshot: id } : {} })`, `router.navigateByUrl('/uploads/' + id)` and `routerLink="/upload"`, not snapLink.
 
-### 12.7 Import summary (`/uploads/:id`)
+### 12.7 `ImportSummaryPage` (`/uploads/:id`, pages/uploads.ts)
 
 - An invalid id shows `.empty big` "Unknown upload.". It also has loading and error states.
-- It loads the rows with `useSnapshotRows(id)`, then `buildDataset`. The view URL is `/` when this snapshot is the latest, else `/?snapshot={id}`.
+- `id` comes from `route.snapshot.paramMap`, and `valid = isSnapshotId(id)`.
+- The router state is read from `inject(Router).getCurrentNavigation()?.extras.state`, falling back to `history.state` when it has a `fileName`, else `null`.
+- In `ngOnInit` it loads the rows with `await data.snapshot(id)` into `ds = signal<Dataset | null>`, then `buildDataset`. Errors go to an `error` signal.
+- The order of states is: invalid → "Unknown upload.", error → `.empty big` with the message, no dataset yet → "Loading…".
+- `viewUrl` and `tiles` are `computed`. The view URL is `/` when this snapshot is the latest, else `/?snapshot={id}`.
 - Breadcrumb "Overall › Uploads › {Mon YYYY} data".
 - `.vhead` holds:
   - `<h2>`: "✓ Saved: " (only when arriving with router state), then "{Mon YYYY} data";
@@ -1194,9 +1387,9 @@ Loading and error states: "Loading…", or `.empty big` with the message.
 
 ## 13. Branding assets
 
-- `public/brand/logo.svg` is a **placeholder** wide wordmark (340×60): two overlapping rounded squares with an indigo→cyan gradient, "YOUR COMPANY" in 25 px weight 800, and "TECHNOLOGIES PRIVATE LIMITED" in 13 px. See Appendix E.
-- `public/favicon.svg` is a 32×32 indigo (`#4F46E5`) rounded square with a white outlined star. See Appendix E.
-- To rebrand, replace `logo.svg` (keeping the file name) and set `BRAND.name` in `src/lib/brand.ts`.
+- `src/assets/brand/logo.svg` (served as `assets/brand/logo.svg`) is a **placeholder** wide wordmark (340×60): two overlapping rounded squares with an indigo→cyan gradient, "YOUR COMPANY" in 25 px weight 800, and "TECHNOLOGIES PRIVATE LIMITED" in 13 px. See Appendix E.
+- `src/favicon.svg` is a 32×32 indigo (`#4F46E5`) rounded square with a white outlined star. See Appendix E.
+- To rebrand, replace `logo.svg` (keeping the file name) and set `BRAND.name` in `src/app/lib/brand.ts`. When the version in `package.json` changes, update `APP_VERSION` there too.
 
 ---
 
@@ -1220,11 +1413,18 @@ Loading and error states: "Loading…", or `.empty big` with the message.
 | E29008 | 60 % stored as an Excel number formatted `0%` |
 
 - Some ETAs are Excel serials formatted `dddd, mmmm dd, yyyy`.
-- Copy it verbatim from Appendix G. Generate the test fixture with `node scripts/make-fde-sample.mjs src/test/fixtures/fde-sample.xlsx`.
+- Copy it verbatim from Appendix G. Generate the test fixture with `node scripts/make-fde-sample.mjs src/app/test/fixtures/fde-sample.xlsx`.
+- `scripts/make-fde-sample-oct.mjs` is the same script, for a second (October) month, so you can try comparing months in the UI. It differs only in these places:
+  - output `local-data/test/fde-sample-oct-2026.xlsx`;
+  - seed `20261018`;
+  - sheet name "Oct 2026";
+  - start dates use `1 + floor(rnd*4)` months, and completion dates are capped at 17 Oct 2026 (`day(2026, 10, 2 + lv)`);
+  - in-progress ETAs are in November 2026;
+  - the edge-case dates move one month earlier: E29001 5 Sep / 2 Oct; E29003 L2 20 Nov; E29004 1 Sep / 30 Sep; E29005 15 Nov / 20 Sep; E29006 10 Oct; E29008 20 Dec 2026.
 
-### 14.2 Vitest suites (all must pass)
+### 14.2 Vitest suites (`npm run test:lib`, all must pass; files in `src/app/test/`, Node environment)
 
-**`src/test/rules.test.ts`**
+**`rules.test.ts`**
 - Every HyperScaler alias in §7.3 resolves correctly, including the "… FDE" variants. "Oracle Cloud", "Red Hat", "FDE" and "" return null.
 - `sortHyperscalers(['Zeta','Red Hat OpenShift','Google','Oracle','GitHub','Anthropic','AWS','Azure'])` returns `['Anthropic','Azure','AWS','Google','GitHub','Red Hat OpenShift','Oracle','Zeta']`.
 - `shownHyperscalers([])` returns the base 4. `shownHyperscalers(['GitHub','AWS','Oracle Cloud'])` returns the base 4 followed by GitHub and Oracle Cloud.
@@ -1238,9 +1438,9 @@ Loading and error states: "Loading…", or `.empty big` with the message.
 - The exact 9 headers map to indexes 0–8 with nothing missing.
 - `levelRamp(n)` gives n distinct colours for n = 1, 3, 4, 6, 9.
 
-**`src/test/snapshotName.test.ts`**: the examples in §7.8. Ordering by upload time: `['301226-020127-080000','151126-181126-093005','011126-181126-120000']` sorts to `['151126-181126-093005','011126-181126-120000','301226-020127-080000']`.
+**`snapshotName.test.ts`**: the examples in §7.8. Ordering by upload time: `['301226-020127-080000','151126-181126-093005','011126-181126-120000']` sorts to `['151126-181126-093005','011126-181126-120000','301226-020127-080000']`.
 
-**`src/test/aggregate.test.ts`**
+**`aggregate.test.ts`**
 - Level-config tests:
   - the default is 4;
   - Completed needs L4;
@@ -1257,7 +1457,7 @@ Loading and error states: "Loading…", or `.empty big` with the message.
   - increasing-level detection;
   - an empty file.
 
-**`src/test/pipeline.test.ts`**, on the fixture with TODAY `2026-11-18`:
+**`pipeline.test.ts`** (fixture path `path.resolve(__dirname, 'fixtures/fde-sample.xlsx')`), on the fixture with TODAY `2026-11-18`:
 - With empty mappings:
   - unknown status `[['Certified',2]]`, unknown level `[['Foundation',1]]`, new HyperScaler `[['Oracle Cloud',3]]`;
   - exactly one error, "Missing Emp ID (row skipped)";
@@ -1275,7 +1475,7 @@ Loading and error states: "Loading…", or `.empty big` with the message.
 
 ### 14.3 Browser scripts (dev tooling, playwright-core plus the installed Edge, headless, viewport 1440×900)
 
-- `scripts/e2e.mjs <screenshotDir>` runs against a dev server started with `LOCAL_DATA_DIR=.e2e-data` and `--port 5174`, with an empty data dir. It checks, in order:
+- `scripts/e2e.mjs <screenshotDir>` reads the fixture from `src/app/test/fixtures/fde-sample.xlsx`. It runs against an app on `BASE_URL` (default `http://localhost:5174`) whose API uses an **empty** data dir: start `LOCAL_DATA_DIR=<abs path to .e2e-data> node ../api/server.mjs` and `ng serve --port 5174`, and pass the same `LOCAL_DATA_DIR` to the script so it can read `mappings.json`. It checks, in order:
   - the empty state shows "No data yet";
   - uploading the fixture shows the decisions region; Save is disabled; "Add as a new HyperScaler "Oracle Cloud"" is present;
   - after choosing Certified→done and Foundation→1, Save is enabled; saving lands on `/uploads/<id>` showing "Saved:"; `mappings.json` contains the 3 choices;
@@ -1297,17 +1497,15 @@ Loading and error states: "Loading…", or `.empty big` with the message.
   - the Data checks card opens, and its first link adds `flag=`;
   - the Month picker's second option shows "You're viewing", and `snapshot=` is kept when clicking the Google subtab;
   - Uploads lists 2 rows.
-- `check-pages.mjs [baseUrl]` is a read-only sweep of all routes. It reports page errors, console errors and failed or ≥ 400 requests.
-- `check-hover.mjs` verifies that the wave is paused after load, running while hovered, and paused again after the pointer leaves.
-- `check-status-filter.mjs` covers the status-card switching and clicking the active card to clear the filter.
-- `settled-shots.mjs` and `shot.mjs` take screenshots. `shoot-cards.mjs` renders `mockups/fde-cards/` and is optional.
+- `check-pages.mjs [baseUrl]` is a read-only sweep of all routes. Its default base URL is `http://localhost:9009`, so pass `http://localhost:4200`. It reports page errors, console errors and failed or ≥ 400 requests.
+- `settled-shots.mjs <baseUrl> <outDir> <path>=<name> …` takes screenshots after a 2.6 s settle. `shot.mjs <outDir> <width> <file.html[?q]>=<name> …` screenshots local HTML files.
 
 ---
 
-## 15. README.md (repo root)
+## 15. README.md
 
-Write a README that covers:
-- run: `cd apps/web && npm install && npm run dev` on http://localhost:9009 (reachable from the network);
+The repo-root README covers:
+- run: `cd apps/web-ng && npm install && npm start`, which starts the API on http://localhost:9010 and the app on http://localhost:4200. `npm run start:api` and `npm run start:web` start them separately;
 - the sheet format table (§7);
 - the HyperScaler, status, level and ETA rules;
 - remembered choices;
@@ -1315,14 +1513,16 @@ Write a README that covers:
 - months and history (snapshot naming, Month ▾, Uploads → View this data, old-format snapshots in `local-data/archive-old-format/` are not loaded);
 - the views/routes table;
 - the "›" navigation rule;
-- the scripts table;
-- the code map.
+- the scripts table (`npm start`, `npm run build`, `npm run typecheck`, `npm run test:lib`, `npm run sample`, the browser scripts);
+- the code map (`apps/api/server.mjs`, `src/app/core`, `src/app/lib`, `src/app/ui`, `src/app/pages`).
+
+`apps/web-ng/README.md` stays the Angular CLI default. `.vscode/` has the CLI defaults: it recommends `angular.ng-template`, has launch configs "ng serve" (Chrome on :4200) and "ng test" (:9876), and npm tasks `start`/`test` with background matchers ending on "bundle generation complete".
 
 ---
 
 ## 16. Acceptance checklist
 
-- `npm run typecheck`, `npm test` and `npm run build` all pass.
+- `npm run typecheck`, `npm run test:lib` and `npm run build` all pass. The production build stays within the 800 kB initial-bundle warning budget, because the Upload page and SheetJS are lazy-loaded.
 - The empty app shows "No data yet". Uploading the generated sample asks for exactly 2 decisions and flags Oracle Cloud. After saving, the Overview shows:
   - 4 status cards (Total enrolled, In progress, Completed, Not started);
   - 4 insight cards;
@@ -1336,12 +1536,14 @@ Write a README that covers:
 
 # Appendices (verbatim source: copy exactly)
 
-## Appendix A: src/index.css
+## Appendix A: src/styles.css
 
-`apps/web/src/index.css`
+`apps/web-ng/src/styles.css`
 
 ```css
-@import 'tailwindcss';
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 /* AI Academy FDE Dashboard — tokens from the approved redesign (mockups/fde-redesign/fde.css) */
 :root {
@@ -1367,14 +1569,6 @@ Write a README that covers:
   color-scheme: light;
 }
 
-@theme {
-  --font-sans: 'Manrope Variable', 'Segoe UI', system-ui, sans-serif;
-  --color-brand: #1d4ed8;
-  --color-ink: #0f1b3d;
-  --color-muted: #6b7690;
-  --color-line: #e3e8f2;
-  --color-wash: #eef2ff;
-}
 
 html,
 body {
@@ -1802,9 +1996,9 @@ select.sel.st-sel.ns { border-color: #cbd5e1; background-color: #f1f5f9; color: 
 @media (prefers-reduced-motion: reduce) { .st-badge { animation: none; } }
 ```
 
-## Appendix B: src/lib/logos.ts
+## Appendix B: src/app/lib/logos.ts
 
-`apps/web/src/lib/logos.ts`
+`apps/web-ng/src/app/lib/logos.ts`
 
 ```ts
 /**
@@ -1826,88 +2020,40 @@ export const HS_LOGOS: Record<string, Logo> = {
 export const HS_TILES: Record<string, { text: string; color: string }> = { Azure: { text: 'Az', color: '#0078D4' } };
 ```
 
-## Appendix C: src/components/icons.tsx
+## Appendix C: IconComponent (in src/app/ui/basics.ts)
 
-`apps/web/src/components/icons.tsx`
+```ts
+/* ---------------- icons ---------------- */
 
-```tsx
-const S = { fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' } as const;
-
-export const Icon = {
-  Star: () => (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinejoin="round" aria-hidden>
-      <path d="M12 2l3 6 6 .9-4.5 4.3 1 6.3L12 16.8 6.5 19.5l1-6.3L3 8.9 9 8z" />
-    </svg>
-  ),
-  Upload: () => (
-    <svg width="16" height="16" viewBox="0 0 24 24" {...S} strokeWidth={2.4} aria-hidden>
-      <path d="M12 16V4M6 10l6-6 6 6M4 20h16" />
-    </svg>
-  ),
-  Search: () => (
-    <svg width="16" height="16" viewBox="0 0 24 24" {...S} stroke="#64748B" aria-hidden>
-      <circle cx="11" cy="11" r="7" />
-      <path d="M20 20l-3.5-3.5" />
-    </svg>
-  ),
-  Users: () => (
-    <svg width="22" height="22" viewBox="0 0 24 24" {...S} aria-hidden>
-      <circle cx="9" cy="8" r="4" />
-      <path d="M2 21c0-4 3-6 7-6s7 2 7 6M17 11a3 3 0 100-6M22 21c0-3-2-5-5-5.5" />
-    </svg>
-  ),
-  Award: () => (
-    <svg width="22" height="22" viewBox="0 0 24 24" {...S} aria-hidden>
-      <circle cx="12" cy="9" r="6" />
-      <path d="M8.5 14l-1.5 8 5-3 5 3-1.5-8" />
-    </svg>
-  ),
-  Plus: () => (
-    <svg width="22" height="22" viewBox="0 0 24 24" {...S} strokeWidth={2.2} aria-hidden>
-      <path d="M12 5v14M5 12h14" />
-    </svg>
-  ),
-  Calendar: () => (
-    <svg width="22" height="22" viewBox="0 0 24 24" {...S} aria-hidden>
-      <rect x="3" y="5" width="18" height="16" rx="2" />
-      <path d="M3 10h18M8 3v4M16 3v4" />
-    </svg>
-  ),
-  Clock: () => (
-    <svg width="14" height="14" viewBox="0 0 24 24" {...S} stroke="#64748B" aria-hidden>
-      <circle cx="12" cy="12" r="9" />
-      <path d="M12 7v5l3 2" />
-    </svg>
-  ),
-  /** 22px clock for stat tiles (WIP). */
-  Progress: () => (
-    <svg width="22" height="22" viewBox="0 0 24 24" {...S} aria-hidden>
-      <circle cx="12" cy="12" r="9" strokeDasharray="4 3" />
-      <path d="M12 7v5l3 2" />
-    </svg>
-  ),
-  History: () => (
-    <svg width="16" height="16" viewBox="0 0 24 24" {...S} aria-hidden>
-      <path d="M3 12a9 9 0 109-9 9.7 9.7 0 00-6.7 2.7L3 8" />
-      <path d="M3 3v5h5M12 7v5l4 2" />
-    </svg>
-  ),
-  Download: () => (
-    <svg width="15" height="15" viewBox="0 0 24 24" {...S} aria-hidden>
-      <path d="M12 4v12M6 10l6 6 6-6M4 20h16" />
-    </svg>
-  ),
-  File: () => (
-    <svg width="30" height="30" viewBox="0 0 24 24" {...S} stroke="#4F46E5" aria-hidden>
-      <path d="M12 16V4M6 10l6-6 6 6M4 20h16" />
-    </svg>
-  ),
-};
+@Component({
+  selector: 'app-icon',
+  standalone: true,
+  template: `
+    @switch (name) {
+      @case ('upload') {
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4M6 10l6-6 6 6M4 20h16" /></svg>
+      }
+      @case ('search') {
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64748B" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></svg>
+      }
+      @case ('history') {
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 109-9 9.7 9.7 0 00-6.7 2.7L3 8" /><path d="M3 3v5h5M12 7v5l4 2" /></svg>
+      }
+      @case ('download') {
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v12M6 10l6 6 6-6M4 20h16" /></svg>
+      }
+      @case ('file') {
+        <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#4F46E5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4M6 10l6-6 6 6M4 20h16" /></svg>
+      }
+    }
+  `,
+  host: { style: 'display:contents' },
+})
 ```
 
-## Appendix D: src/lib/levels.ts
+## Appendix D: src/app/lib/levels.ts
 
-`apps/web/src/lib/levels.ts`
+`apps/web-ng/src/app/lib/levels.ts`
 
 ```ts
 /**
@@ -1970,9 +2116,9 @@ export function levelRamp(n: number): LevelColor[] {
 }
 ```
 
-## Appendix E1: public/brand/logo.svg
+## Appendix E1: src/assets/brand/logo.svg
 
-`apps/web/public/brand/logo.svg`
+`apps/web-ng/src/assets/brand/logo.svg`
 
 ```svg
 <!-- PLACEHOLDER wordmark. Replace this file with the startup's real logo (SVG preferred), keeping the file name,
@@ -1986,68 +2132,65 @@ export function levelRamp(n: number): LevelColor[] {
 </svg>
 ```
 
-## Appendix E2: public/favicon.svg
+## Appendix E2: src/favicon.svg
 
-`apps/web/public/favicon.svg`
+`apps/web-ng/src/favicon.svg`
 
 ```svg
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#4F46E5"/><path d="M16 5l3.6 7.2 7.9 1.1-5.7 5.6 1.3 7.9L16 23.1l-7.1 3.7 1.3-7.9-5.7-5.6 7.9-1.1z" fill="none" stroke="#fff" stroke-width="2.4" stroke-linejoin="round"/></svg>
 ```
 
-## Appendix F: vite-plugin-local-data.ts
+## Appendix F: apps/api/server.mjs
 
-`apps/web/vite-plugin-local-data.ts`
+`apps/api/server.mjs`
 
-```ts
+```js
 /**
- * Dev-server plugin that stores snapshot CSVs in <root>/local-data.
+ * Local API for the AI Academy FDE Dashboard (Angular app in ../web-ng).
+ * Stores each monthly upload as a CSV snapshot in ./local-data (or $LOCAL_DATA_DIR). No dependencies.
  *
- * It stands in for the future backend and exposes the same endpoints:
  *   GET  /api/snapshots          → JSON list of snapshots, newest first
- *   GET  /api/snapshots/latest   → CSV text of the newest snapshot (204 if none)
+ *   GET  /api/snapshots/latest   → CSV text of the newest snapshot (204 if none; X-Snapshot-Name header)
  *   GET  /api/snapshots/:name    → CSV text of one snapshot
  *   POST /api/snapshots          → { name, content } writes a new snapshot (never overwrites)
  *   GET  /api/mappings           → JSON of the uploader's remembered value choices (204 if none)
  *   PUT  /api/mappings           → replaces local-data/mappings.json
  *
  * File names: {latest sheet date ddmmyy}-{upload date ddmmyy}-{upload time hhmmss}.csv
+ * Usage: node server.mjs   (PORT, default 9010; LOCAL_DATA_DIR, default ./local-data)
  */
-import type { Plugin, Connect } from 'vite';
-import type { ServerResponse } from 'node:http';
+import http from 'node:http';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const PORT = Number(process.env.PORT ?? 9010);
+const DATA_DIR = path.resolve(process.env.LOCAL_DATA_DIR ?? path.join(HERE, 'local-data'));
 const NAME_RE = /^(\d{6})-(\d{6})-(\d{6})\.csv$/;
 const MAX_BODY_BYTES = 25 * 1024 * 1024;
 
-export interface SnapshotInfo {
-  name: string;
-  dataUpTo: string; // ddmmyy
-  uploadedOn: string; // ddmmyy
-  uploadedAt: string; // hhmmss
-  sizeBytes: number;
-}
-
 /** Sort key from the upload-date and upload-time parts: yymmddhhmmss. */
-function uploadSortKey(name: string): string {
+function uploadSortKey(name) {
   const m = NAME_RE.exec(name);
   if (!m) return '';
   const d = m[2];
   return d.slice(4, 6) + d.slice(2, 4) + d.slice(0, 2) + m[3];
 }
 
-function send(res: ServerResponse, status: number, body: string, type = 'application/json') {
+function send(res, status, body, type = 'application/json') {
   res.statusCode = status;
   res.setHeader('Content-Type', `${type}; charset=utf-8`);
   res.setHeader('Cache-Control', 'no-store');
   res.end(body);
 }
+const json = (res, status, obj) => send(res, status, JSON.stringify(obj));
 
-function readBody(req: Connect.IncomingMessage): Promise<string> {
+function readBody(req) {
   return new Promise((resolve, reject) => {
     let size = 0;
-    const chunks: Buffer[] = [];
-    req.on('data', (c: Buffer) => {
+    const chunks = [];
+    req.on('data', (c) => {
       size += c.length;
       if (size > MAX_BODY_BYTES) {
         reject(new Error('Request body too large'));
@@ -2061,121 +2204,96 @@ function readBody(req: Connect.IncomingMessage): Promise<string> {
   });
 }
 
-export function localData(options: { dir?: string } = {}): Plugin {
-  let dataDir = '';
-
-  async function listSnapshots(): Promise<SnapshotInfo[]> {
-    await fs.mkdir(dataDir, { recursive: true });
-    const entries = await fs.readdir(dataDir);
-    const out: SnapshotInfo[] = [];
-    for (const name of entries) {
-      const m = NAME_RE.exec(name);
-      if (!m) continue;
-      const stat = await fs.stat(path.join(dataDir, name));
-      out.push({ name, dataUpTo: m[1], uploadedOn: m[2], uploadedAt: m[3], sizeBytes: stat.size });
-    }
-    return out.sort((a, b) => uploadSortKey(b.name).localeCompare(uploadSortKey(a.name)));
+async function listSnapshots() {
+  await fs.mkdir(DATA_DIR, { recursive: true });
+  const out = [];
+  for (const name of await fs.readdir(DATA_DIR)) {
+    const m = NAME_RE.exec(name);
+    if (!m) continue;
+    const stat = await fs.stat(path.join(DATA_DIR, name));
+    out.push({ name, dataUpTo: m[1], uploadedOn: m[2], uploadedAt: m[3], sizeBytes: stat.size });
   }
-
-  const handler: Connect.NextHandleFunction = async (req, res, next) => {
-    const url = (req.url ?? '/').split('?')[0];
-    try {
-      if (req.method === 'GET' && (url === '/' || url === '')) {
-        return send(res, 200, JSON.stringify(await listSnapshots()));
-      }
-      if (req.method === 'GET') {
-        let name = decodeURIComponent(url.replace(/^\//, ''));
-        if (name === 'latest') {
-          const list = await listSnapshots();
-          if (!list.length) return send(res, 204, '', 'text/csv');
-          name = list[0].name;
-          res.setHeader('X-Snapshot-Name', name);
-        }
-        if (!NAME_RE.test(name)) return send(res, 400, JSON.stringify({ error: 'Invalid snapshot name' }));
-        try {
-          const csv = await fs.readFile(path.join(dataDir, name), 'utf8');
-          res.setHeader('X-Snapshot-Name', name);
-          return send(res, 200, csv, 'text/csv');
-        } catch {
-          return send(res, 404, JSON.stringify({ error: 'Snapshot not found' }));
-        }
-      }
-      if (req.method === 'POST' && (url === '/' || url === '')) {
-        const body = JSON.parse(await readBody(req)) as { name?: unknown; content?: unknown };
-        if (typeof body.name !== 'string' || !NAME_RE.test(body.name)) {
-          return send(res, 400, JSON.stringify({ error: 'Invalid snapshot name' }));
-        }
-        if (typeof body.content !== 'string') {
-          return send(res, 400, JSON.stringify({ error: 'Missing content' }));
-        }
-        await fs.mkdir(dataDir, { recursive: true });
-        const target = path.join(dataDir, body.name);
-        // Never overwrite: history must stay immutable.
-        try {
-          await fs.access(target);
-          return send(res, 409, JSON.stringify({ error: 'Snapshot already exists' }));
-        } catch {
-          /* does not exist: good */
-        }
-        const tmp = `${target}.${process.pid}.tmp`;
-        await fs.writeFile(tmp, body.content, 'utf8');
-        await fs.rename(tmp, target);
-        return send(res, 201, JSON.stringify({ name: body.name }));
-      }
-      next();
-    } catch (err) {
-      send(res, 500, JSON.stringify({ error: err instanceof Error ? err.message : 'Server error' }));
-    }
-  };
-
-  const mappingsHandler: Connect.NextHandleFunction = async (req, res, next) => {
-    const url = (req.url ?? '/').split('?')[0];
-    if (url !== '/' && url !== '') return next();
-    const file = path.join(dataDir, 'mappings.json');
-    try {
-      if (req.method === 'GET') {
-        try {
-          return send(res, 200, await fs.readFile(file, 'utf8'));
-        } catch {
-          return send(res, 204, '');
-        }
-      }
-      if (req.method === 'PUT') {
-        const body = await readBody(req);
-        const parsed = JSON.parse(body) as unknown;
-        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return send(res, 400, JSON.stringify({ error: 'Expected a JSON object' }));
-        await fs.mkdir(dataDir, { recursive: true });
-        const tmp = `${file}.${process.pid}.tmp`;
-        await fs.writeFile(tmp, JSON.stringify(parsed, null, 2), 'utf8');
-        await fs.rename(tmp, file);
-        return send(res, 200, JSON.stringify({ ok: true }));
-      }
-      next();
-    } catch (err) {
-      send(res, 500, JSON.stringify({ error: err instanceof Error ? err.message : 'Server error' }));
-    }
-  };
-
-  return {
-    name: 'local-data',
-    configResolved(config) {
-      dataDir = path.resolve(config.root, options.dir ?? 'local-data');
-    },
-    configureServer(server) {
-      server.middlewares.use('/api/snapshots', handler);
-      server.middlewares.use('/api/mappings', mappingsHandler);
-    },
-    configurePreviewServer(server) {
-      server.middlewares.use('/api/snapshots', handler);
-      server.middlewares.use('/api/mappings', mappingsHandler);
-    },
-  };
+  return out.sort((a, b) => uploadSortKey(b.name).localeCompare(uploadSortKey(a.name)));
 }
+
+/** Write via a temp file + rename so a crash never leaves a half-written file. */
+async function atomicWrite(file, text) {
+  await fs.mkdir(DATA_DIR, { recursive: true });
+  const tmp = `${file}.${process.pid}.tmp`;
+  await fs.writeFile(tmp, text, 'utf8');
+  await fs.rename(tmp, file);
+}
+
+async function snapshots(req, res, rest) {
+  if (req.method === 'GET' && rest === '') return json(res, 200, await listSnapshots());
+  if (req.method === 'GET') {
+    let name = decodeURIComponent(rest);
+    if (name === 'latest') {
+      const list = await listSnapshots();
+      if (!list.length) return send(res, 204, '', 'text/csv');
+      name = list[0].name;
+    }
+    if (!NAME_RE.test(name)) return json(res, 400, { error: 'Invalid snapshot name' });
+    try {
+      const csv = await fs.readFile(path.join(DATA_DIR, name), 'utf8');
+      res.setHeader('X-Snapshot-Name', name);
+      return send(res, 200, csv, 'text/csv');
+    } catch {
+      return json(res, 404, { error: 'Snapshot not found' });
+    }
+  }
+  if (req.method === 'POST' && rest === '') {
+    const body = JSON.parse(await readBody(req));
+    if (typeof body.name !== 'string' || !NAME_RE.test(body.name)) return json(res, 400, { error: 'Invalid snapshot name' });
+    if (typeof body.content !== 'string') return json(res, 400, { error: 'Missing content' });
+    const target = path.join(DATA_DIR, body.name);
+    try {
+      await fs.access(target);
+      return json(res, 409, { error: 'Snapshot already exists' }); // history is never overwritten
+    } catch {
+      /* does not exist yet: good */
+    }
+    await atomicWrite(target, body.content);
+    return json(res, 201, { name: body.name });
+  }
+  return json(res, 405, { error: 'Method not allowed' });
+}
+
+async function mappings(req, res) {
+  const file = path.join(DATA_DIR, 'mappings.json');
+  if (req.method === 'GET') {
+    try {
+      return send(res, 200, await fs.readFile(file, 'utf8'));
+    } catch {
+      return send(res, 204, '');
+    }
+  }
+  if (req.method === 'PUT') {
+    const parsed = JSON.parse(await readBody(req));
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return json(res, 400, { error: 'Expected a JSON object' });
+    await atomicWrite(file, JSON.stringify(parsed, null, 2));
+    return json(res, 200, { ok: true });
+  }
+  return json(res, 405, { error: 'Method not allowed' });
+}
+
+const server = http.createServer(async (req, res) => {
+  const url = (req.url ?? '/').split('?')[0].replace(/\/+$/, '');
+  try {
+    if (url === '/api/snapshots' || url.startsWith('/api/snapshots/')) return await snapshots(req, res, url.slice('/api/snapshots'.length).replace(/^\//, ''));
+    if (url === '/api/mappings') return await mappings(req, res);
+    return json(res, 404, { error: 'Not found' });
+  } catch (err) {
+    return json(res, err instanceof SyntaxError ? 400 : 500, { error: err instanceof Error ? err.message : 'Server error' });
+  }
+});
+
+server.listen(PORT, () => console.log(`FDE API on http://localhost:${PORT} · data in ${DATA_DIR}`));
 ```
 
 ## Appendix G: scripts/make-fde-sample.mjs
 
-`apps/web/scripts/make-fde-sample.mjs`
+`apps/web-ng/scripts/make-fde-sample.mjs`
 
 ```js
 // Builds local-data/test/fde-sample-nov-2026.xlsx (or the path given as the first argument): one month of user-wise data in the agreed format.

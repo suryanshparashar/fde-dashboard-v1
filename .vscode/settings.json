@@ -1,0 +1,5 @@
+{
+  // Use the Angular app's own TypeScript (5.4, required by Angular 17) instead of VS Code's bundled version.
+  "typescript.tsdk": "apps/web-ng/node_modules/typescript/lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true
+}
