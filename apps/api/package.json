@@ -1,0 +1,8 @@
+{
+  "name": "fde-api",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Local API for the AI Academy FDE Dashboard: stores monthly snapshots in ./local-data",
+  "scripts": { "start": "node server.mjs" }
+}
